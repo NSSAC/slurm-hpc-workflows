@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ray-hpc-workflows"
+dynamic = ["version"]
+authors = [
+  { name="Parantapa Bhattacharya", email="parantapa@virginia.edu" },
+]
+description = "HPC workflows using Ray."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "click",
+    "rich",
+    "jinja2",
+    "psutil",
+    "netifaces",
+    "pydantic",
+    "platformdirs",
+    "python-dotenv",
+    "psycopg2",
+    "ray[default]"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.urls]
+"Homepage" = "http://github.com/nssac/ray-hpc-workflows"
