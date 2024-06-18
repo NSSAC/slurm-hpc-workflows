@@ -1,0 +1,6 @@
+{
+    project: "ray-hpc-workflows",
+    remotes: {
+        rivanna: "rivanna:ray-hpc-workflows",
+    }
+}
