@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 import ray
 
-from slurm_job_manager import SlurmJob, SlurmJobManager
 from .utils import (
     Closeable,
     data_address,
@@ -26,6 +25,7 @@ from .utils import (
     find_ray,
     find_setup_script,
 )
+from .slurm_job_manager import SlurmJob, SlurmJobManager
 
 WORKER_PORT_MIN = 20000
 WORKER_PORT_MAX = 30000
