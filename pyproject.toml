@@ -27,7 +27,7 @@ dependencies = [
     "platformdirs",
     "python-dotenv",
     "psycopg2",
-    "ray[default]"
+    "ray[default]",
     "optuna",
     "optuna-dashboard"
 ]
