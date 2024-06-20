@@ -14,16 +14,14 @@ from contextlib import closing, contextmanager
 import netifaces
 
 
-def _find_executable(name: Path | str | None, default: str) -> Path:
+def _find_executable(name: str, path: Path | str | None = None) -> Path:
     """Find a given executable."""
-    if isinstance(name, Path):
-        return name
-
-    if name is None:
-        name = default
-
-    if Path(name).exists():
-        return Path(name)
+    if path is not None:
+        if not isinstance(path, Path):
+            path = Path(path)
+        if not path.exists():
+            raise ValueError("Explicitly provided path doesn't exist.")
+        return path
 
     env_var = name.upper() + "_EXECUTABLE"
     if env_var in os.environ:
@@ -37,21 +35,22 @@ def _find_executable(name: Path | str | None, default: str) -> Path:
     return Path(executable)
 
 
-find_sbatch = partial(_find_executable, default="sbatch")
-find_ray = partial(_find_executable, default="ray")
+find_sbatch = partial(_find_executable, "sbatch")
+find_ray = partial(_find_executable, "ray")
 
 
-def find_setup_script(file: Path | str | None) -> Path:
+def find_setup_script(path: Path | str | None) -> Path:
     """Find the setup script."""
-    if file is None:
-        file = Path.home() / "default-env.sh"
-    if isinstance(file, str):
-        file = Path(file)
+    if path is None:
+        path = Path.home() / "default-env.sh"
 
-    if not file.exists():
+    if not isinstance(path, Path):
+        path = Path(path)
+
+    if not path.exists():
         raise RuntimeError("Can't find setup script.")
 
-    return file
+    return path
 
 
 def data_address(interface: str | None, default: str = "0.0.0.0") -> str:
