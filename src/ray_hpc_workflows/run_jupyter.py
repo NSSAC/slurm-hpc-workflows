@@ -1,5 +1,6 @@
 """Start a Jupyter Lab instance."""
 
+import subprocess
 from pathlib import Path
 from textwrap import dedent
 
@@ -41,7 +42,7 @@ def run_jupyter(
 
     sbatch_args = SBATCH_ARGS[type]
     sbatch_args.append(f"--account {account}")
-    sbatch_args.append(f"--runtime {runtime_h}:00:00")
+    sbatch_args.append(f"--time {runtime_h}:00:00")
     if qos:
         sbatch_args.append(f"--qos {qos}")
     if reservation:
@@ -73,7 +74,14 @@ def run_jupyter(
     script = dedent(script)
 
     sjm = SlurmJobManager(cancel_on_close=False)
-    job = sjm.submit(name=name, sbatch_args=sbatch_args, script=script)
+    try:
+        job = sjm.submit(name=name, sbatch_args=sbatch_args, script=script)
 
-    print(f"Job ID: {job.job_id}")
-    print(f"Output file: {job.output_file!s}")
+        print(f"Job ID: {job.job_id}")
+        print(f"Output file: {job.output_file!s}")
+    except subprocess.CalledProcessError as cp:
+        print(f"Failed to submit job: {cp.returncode}")
+        if cp.stdout.strip():
+            print(cp.stdout)
+        if cp.stderr.strip():
+            print(cp.stderr)
