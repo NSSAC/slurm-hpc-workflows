@@ -38,6 +38,7 @@ def _find_executable(name: str, path: Path | str | None = None) -> Path:
 find_sbatch = partial(_find_executable, "sbatch")
 find_ray = partial(_find_executable, "ray")
 find_jupyter = partial(_find_executable, "jupyter")
+find_postgres = partial(_find_executable, "postgres")
 
 
 def find_setup_script(path: Path | str | None) -> Path:
