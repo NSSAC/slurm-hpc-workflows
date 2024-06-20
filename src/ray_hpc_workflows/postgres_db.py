@@ -277,7 +277,7 @@ class PostgresDB(Closeable):
     ):
         if db_dir is None:
             now = datetime.now().isoformat()
-            db_dir = platformdirs.user_cache_path(appname=f"temp-postgres-db-{now}")
+            db_dir = platformdirs.user_cache_path(appname=f"postgres-db-{now}")
 
         db_dir = Path(db_dir)
         self.db_dir = db_dir

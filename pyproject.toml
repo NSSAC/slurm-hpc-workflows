@@ -28,6 +28,8 @@ dependencies = [
     "python-dotenv",
     "psycopg2",
     "ray[default]"
+    "optuna",
+    "optuna-dashboard"
 ]
 
 [tool.setuptools.packages.find]
