@@ -10,12 +10,13 @@ import shutil
 import subprocess
 from pathlib import Path
 from textwrap import dedent
+from datetime import datetime
 from dataclasses import dataclass
 from collections import defaultdict
 
-from pydantic import BaseModel
-
 import ray
+import platformdirs
+from pydantic import BaseModel
 
 from .utils import (
     Closeable,
@@ -30,6 +31,21 @@ from .slurm_job_manager import SlurmJob, SlurmJobManager
 WORKER_PORT_MIN = 20000
 WORKER_PORT_MAX = 30000
 NUM_PORTS_PER_WORKER = 50
+
+SBATCH_ARGS: dict[str, list[str]] = {}
+SBATCH_ARGS["bii"] = [
+    "--partition=bii",
+    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+]
+SBATCH_ARGS["bii-gpu"] = [
+    "--partition=bii-gpu",
+    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
+]
+SBATCH_ARGS["bii-largemem-cascadelake"] = [
+    "--partition=bii-largemem",
+    "--constraint=cascadelake",
+    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+]
 
 
 @dataclass
@@ -50,10 +66,7 @@ def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[Worke
         WorkerType(
             name="bii",
             ray_executable=ray_executable,
-            sbatch_args=[
-                "--partition=bii",
-                "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
-            ],
+            sbatch_args=SBATCH_ARGS["bii"],
             setup_script=setup_script,
             num_cpus=37,
             num_gpus=0,
@@ -65,11 +78,7 @@ def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[Worke
         WorkerType(
             name="bii-largemem-cascadelake",
             ray_executable=ray_executable,
-            sbatch_args=[
-                "--partition=bii-largemem",
-                "--constraint=cascadelake",
-                "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
-            ],
+            sbatch_args=SBATCH_ARGS["bii-largemem-cascadelake"],
             setup_script=setup_script,
             num_cpus=37,
             num_gpus=0,
@@ -81,10 +90,7 @@ def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[Worke
         WorkerType(
             name="bii-gpu",
             ray_executable=ray_executable,
-            sbatch_args=[
-                "--partition=bii-gpu",
-                "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
-            ],
+            sbatch_args=SBATCH_ARGS["bii-gpu"],
             setup_script=setup_script,
             num_cpus=37,
             num_gpus=4,
@@ -107,7 +113,7 @@ class RayCluster(Closeable):
         self,
         account: str,
         runtime_h: int,
-        work_dir: Path | str,
+        work_dir: Path | str | None = None,
         sjm: SlurmJobManager | None = None,
         qos: str | None = None,
         reservation: str | None = None,
@@ -124,6 +130,10 @@ class RayCluster(Closeable):
         port = arbitrary_free_port(address)
         dashboard_port = arbitrary_free_port("")
         client_server_port = arbitrary_free_port(address)
+
+        if work_dir is None:
+            now = datetime.now().isoformat()
+            work_dir = platformdirs.user_cache_path(appname=f"ray-work-dir-{now}")
 
         work_dir = Path(work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -232,8 +242,8 @@ class RayCluster(Closeable):
         worker_ports_str = ",".join(worker_ports_str)
 
         worker_script = rf"""
-        . "/etc/profile"
-        . "%(setup_script)s"
+        . '/etc/profile'
+        . '{worker_type.setup_script!s}'
 
         set -Eeuo pipefail
         set -x
@@ -269,7 +279,6 @@ class RayCluster(Closeable):
             --block
         """
         worker_script = dedent(worker_script)
-        worker_script = worker_script % dict(setup_script=worker_type.setup_script)
 
         sbatch_args = [
             f"--account {self.account}",

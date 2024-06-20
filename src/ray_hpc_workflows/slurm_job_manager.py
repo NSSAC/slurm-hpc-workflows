@@ -9,6 +9,7 @@ from typing import Generator
 from datetime import datetime
 
 import jinja2
+import platformdirs
 from pydantic import BaseModel
 
 from .utils import Closeable, find_sbatch
@@ -144,11 +145,12 @@ class SlurmJobManager(Closeable):
 
     def __init__(
         self,
-        work_dir: Path | str,
+        work_dir: Path | str | None = None,
         sbatch_exe: Path | str | None = None,
         slurm_user: str | None = None,
         command_timeout: int = COMMAND_TIMEOUT,
         preserve_env: list[str] = PRESERVE_ENV,
+        cancel_on_close: bool = True,
     ):
         """Initialize.
 
@@ -163,8 +165,14 @@ class SlurmJobManager(Closeable):
                 Enviroment varimables not specified will be removed.
                 This is necessary so that Slurm generated variables from parent job
                 do not conflict with Slurm generated variables in the child job.
+            cancel_on_close: If True (default) kill all running jobs on exit.
         """
+        if work_dir is None:
+            now = datetime.now().isoformat()
+            work_dir = platformdirs.user_cache_path(appname=f"sjm-work-dir-{now}")
+
         work_dir = Path(work_dir)
+        work_dir.mkdir(parents=True, exist_ok=True)
 
         sbatch_exe = find_sbatch(sbatch_exe)
         self.sbatch_exe = str(sbatch_exe)
@@ -176,8 +184,8 @@ class SlurmJobManager(Closeable):
         self.slurm_user = slurm_user
 
         self.command_timeout = command_timeout
-
         self.preserve_env = preserve_env
+        self.cancel_on_close = cancel_on_close
 
         self.work_dir = work_dir
         if not self.work_dir.exists():
@@ -283,11 +291,12 @@ class SlurmJobManager(Closeable):
 
     def close(self):
         """Shutdown all running jobs."""
-        self._update_running_jobs()
+        if self.cancel_on_close:
+            self._update_running_jobs()
 
-        running_job_ids: list[int] = []
-        for job in self.jobs.values():
-            if job.is_running:
-                running_job_ids.append(job.job_id)
+            running_job_ids: list[int] = []
+            for job in self.jobs.values():
+                if job.is_running:
+                    running_job_ids.append(job.job_id)
 
-        cancel_jobs(self.scancel_exe, running_job_ids, self.command_timeout)
+            cancel_jobs(self.scancel_exe, running_job_ids, self.command_timeout)

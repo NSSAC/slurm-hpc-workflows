@@ -35,3 +35,6 @@ where = ["src"]
 
 [project.urls]
 "Homepage" = "http://github.com/nssac/ray-hpc-workflows"
+
+[project.scripts]
+"run-jupyter" = "ray_hpc_workflows.run_jupyter:run_jupyter"
