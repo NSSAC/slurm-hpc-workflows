@@ -95,6 +95,9 @@ def submit_sbatch_job(
     for key in preserve_env:
         if key in os.environ:
             env[key] = os.environ[key]
+    for key in os.environ:
+        if key.endswith("_EXECUTABLE"):
+            env[key] = os.environ[key]
 
     # Figure out the output and error file names.
     output_file = str(work_dir / f"{name}-%j.out")
