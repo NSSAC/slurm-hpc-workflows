@@ -1,4 +1,4 @@
-"""Run a temporary postgres database."""
+"""Run a postgres database."""
 
 import json
 import time
