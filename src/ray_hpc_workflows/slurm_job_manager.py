@@ -16,8 +16,6 @@ from .utils import Closeable, find_sbatch
 
 COMMAND_TIMEOUT = 120
 
-PRESERVE_ENV = ["USER", "HOME", "PATH", "PYTHONPATH"]
-
 SBATCH_OUTPUT_REGEX = re.compile(r"Submitted batch job (?P<id>\S*)")
 
 SQUEUE_CHECK_INTERVAL = 5  # seconds
@@ -27,6 +25,28 @@ ENVIRONMENT = jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
 )
+
+
+def get_clean_environ() -> dict[str, str]:
+    """Crate environment dict without SLURM set variables.
+
+    This is an issue when submitting slurm jobs from within slurm jobs.
+    """
+    sanitized_env: dict[str, str] = {}
+    for k, v in os.environ.items():
+        if (
+            k.startswith("PMI_")
+            or k.startswith("SLURM_")
+            or k.startswith("SLURMD_")
+            or k.startswith("SRUN_")
+        ):
+            continue
+
+        sanitized_env[k] = v
+    return sanitized_env
+
+
+CLEAN_ENVIRON = get_clean_environ()
 
 
 def get_running_jobids(squeue_exe: str, slurm_user: str, timeout: int) -> set[int]:
@@ -85,20 +105,9 @@ def submit_sbatch_job(
     sbatch_args: list[str],
     script: str,
     work_dir: Path,
-    preserve_env: list[str],
     timeout: int,
 ) -> SlurmJob:
     """Submit a sbatch job."""
-
-    # Create clean environment
-    env = {}
-    for key in preserve_env:
-        if key in os.environ:
-            env[key] = os.environ[key]
-    for key in os.environ:
-        if key.endswith("_EXECUTABLE"):
-            env[key] = os.environ[key]
-
     # Figure out the output and error file names.
     output_file = str(work_dir / f"{name}-%j.out")
 
@@ -120,7 +129,7 @@ def submit_sbatch_job(
         capture_output=True,
         text=True,
         timeout=timeout,
-        env=env,
+        env=CLEAN_ENVIRON,
     )
 
     # Extract job id
@@ -152,7 +161,6 @@ class SlurmJobManager(Closeable):
         sbatch_exe: Path | str | None = None,
         slurm_user: str | None = None,
         command_timeout: int = COMMAND_TIMEOUT,
-        preserve_env: list[str] = PRESERVE_ENV,
         cancel_on_close: bool = True,
     ):
         """Initialize.
@@ -187,7 +195,6 @@ class SlurmJobManager(Closeable):
         self.slurm_user = slurm_user
 
         self.command_timeout = command_timeout
-        self.preserve_env = preserve_env
         self.cancel_on_close = cancel_on_close
 
         self.work_dir = work_dir
@@ -223,7 +230,6 @@ class SlurmJobManager(Closeable):
             sbatch_args=sbatch_args,
             script=script,
             work_dir=self.work_dir,
-            preserve_env=self.preserve_env,
             timeout=self.command_timeout,
         )
 
