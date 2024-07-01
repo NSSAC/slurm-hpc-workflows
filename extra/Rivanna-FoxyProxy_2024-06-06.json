@@ -1,0 +1,51 @@
+{
+  "mode": "pattern",
+  "sync": false,
+  "autoBackup": false,
+  "passthrough": "",
+  "theme": "",
+  "container": {
+    "incognito": "",
+    "container-1": "",
+    "container-2": "",
+    "container-3": "",
+    "container-4": ""
+  },
+  "commands": {
+    "setProxy": "",
+    "setTabProxy": "",
+    "quickAdd": ""
+  },
+  "data": [
+    {
+      "active": true,
+      "title": "Clusters",
+      "type": "socks5",
+      "hostname": "127.0.0.1",
+      "port": "12001",
+      "username": "",
+      "password": "",
+      "cc": "",
+      "city": "",
+      "color": "#7fff00",
+      "pac": "",
+      "pacString": "",
+      "proxyDNS": true,
+      "include": [
+        {
+          "type": "wildcard",
+          "title": "udc-*",
+          "pattern": "*://udc-*",
+          "active": true
+        },
+        {
+          "type": "wildcard",
+          "title": "10.*",
+          "pattern": "://10.*",
+          "active": true
+        }
+      ],
+      "exclude": []
+    }
+  ]
+}
