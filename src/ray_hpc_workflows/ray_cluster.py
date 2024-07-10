@@ -41,9 +41,9 @@ SBATCH_ARGS["bii-gpu"] = [
     "--partition=bii-gpu",
     "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
 ]
-SBATCH_ARGS["bii-largemem-cascadelake"] = [
+SBATCH_ARGS["bii-largemem-intel"] = [
     "--partition=bii-largemem",
-    "--constraint=cascadelake",
+    "--constraint=intel",
     "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
 ]
 
@@ -76,9 +76,9 @@ def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[Worke
 
     worker_types.append(
         WorkerType(
-            name="bii-largemem-cascadelake",
+            name="bii-largemem-intel",
             ray_executable=ray_executable,
-            sbatch_args=SBATCH_ARGS["bii-largemem-cascadelake"],
+            sbatch_args=SBATCH_ARGS["bii-largemem-intel"],
             setup_script=setup_script,
             num_cpus=37,
             num_gpus=0,
