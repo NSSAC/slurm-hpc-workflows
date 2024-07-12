@@ -18,6 +18,7 @@ import ray
 import platformdirs
 from pydantic import BaseModel
 
+
 from .utils import (
     Closeable,
     data_address,
@@ -25,8 +26,12 @@ from .utils import (
     ignoring_sigint,
     find_ray,
     find_setup_script,
+    terminate_gracefully,
 )
 from .slurm_job_manager import SlurmJob, SlurmJobManager
+
+# from .prometheus_service import PrometheusService
+# from .grafana_service import GrafanaService
 
 WORKER_PORT_MIN = 20000
 WORKER_PORT_MAX = 30000
@@ -159,11 +164,32 @@ class RayCluster(Closeable):
         self.temp_dir = Path("/tmp") / user / "ray_temp_dir"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
+        # prometheus_port = arbitrary_free_port("")
+        # metrics_job_name = "Ray"
+        # metrics_service_discovery_file = (
+        #     self.temp_dir / "prom_metrics_service_discovery.json"
+        # )
+        # self.prometheus = PrometheusService(
+        #     metrics_job_name=metrics_job_name,
+        #     metrics_service_discovery_file=metrics_service_discovery_file,
+        #     storage_path=work_dir / "prometheus",
+        #     port=prometheus_port,
+        #     verbose=verbose,
+        # )
+
+        # grafana_port = arbitrary_free_port("")
+        # self.grafana = GrafanaService(
+        #     prometheus_url=self.prometheus.web_url,
+        #     provisioning_dir=work_dir / "grafana",
+        #     port=grafana_port,
+        #     verbose=verbose,
+        # )
+
         my_pid = str(os.getpid())
         plasma_store_socket_name = self.temp_dir / f"plasma-store-socket-{my_pid}.sock"
         raylet_socket_name = self.temp_dir / f"raylet-socket-{my_pid}.sock"
 
-        print("Starting head service ...")
+        print("Starting Ray head service ...")
         cmd = f"""
         '{ray_executable!s}' start
             --head
@@ -189,6 +215,10 @@ class RayCluster(Closeable):
             print(f"executing: {cmd_str}")
         cmd = shlex.split(cmd)
 
+        # env = dict(os.environ)
+        # env["RAY_PROMETHEUS_HOST"] = self.prometheus.web_url
+        # env["RAY_GRAFANA_HOST"] = self.grafana.dashboard_url
+
         self._head_proc: subprocess.Popen | None
         with open(self.work_dir / "head.log", "at") as fobj:
             with ignoring_sigint():
@@ -197,6 +227,7 @@ class RayCluster(Closeable):
                     stdout=fobj,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
+                    # env=env,
                 )
 
         self.worker_types: dict[str, WorkerType] = {}
@@ -213,7 +244,7 @@ class RayCluster(Closeable):
         ray.init(self.client_address, log_to_driver=log_to_driver)
         atexit.register(self.close)
 
-        print(f"Dashboard URL: {self.dashboard_url}")
+        print(f"Ray dashboard URL: {self.dashboard_url}")
 
     def define_worker(self, worker_type: WorkerType):
         """Define the new worker type."""
@@ -331,13 +362,11 @@ class RayCluster(Closeable):
         ray.shutdown()
 
         if self._head_proc is not None:
-            if self._head_proc.poll() is None:
-                self._head_proc.terminate()
-            try:
-                self._head_proc.wait(5)
-            except subprocess.TimeoutExpired:
-                self._head_proc.kill()
+            terminate_gracefully(self._head_proc, proc_name="Ray head process")
             self._head_proc = None
+
+        # self.prometheus.close()
+        # self.grafana.close()
 
         if self.plasma_dir.exists():
             shutil.rmtree(self.plasma_dir)

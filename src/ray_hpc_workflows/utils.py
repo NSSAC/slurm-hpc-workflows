@@ -40,6 +40,8 @@ find_ray = partial(_find_executable, "ray")
 find_jupyter = partial(_find_executable, "jupyter")
 find_postgres = partial(_find_executable, "postgres")
 find_optuna_dashboard = partial(_find_executable, "optuna-dashboard")
+find_prometheus = partial(_find_executable, "prometheus")
+find_grafana = partial(_find_executable, "grafana")
 
 
 def find_setup_script(path: Path | str | None) -> Path:
@@ -91,15 +93,17 @@ def ignoring_sigint():
         signal.signal(signal.SIGINT, handler)
 
 
-def terminate_gracefully(proc: subprocess.Popen, timeout: int = 5):
+def terminate_gracefully(
+    proc: subprocess.Popen, timeout: int = 5, proc_name: str = "process"
+):
     """Terminal a process gracefully."""
     if proc.poll() is None:
-        print("Terminating process ...", flush=True)
+        print(f"Terminating {proc_name} ...", flush=True)
         proc.terminate()
         try:
             proc.wait(timeout)
         except subprocess.TimeoutExpired:
-            print("Killing process ...", flush=True)
+            print(f"Killing {proc_name} ...", flush=True)
             proc.kill()
 
 
