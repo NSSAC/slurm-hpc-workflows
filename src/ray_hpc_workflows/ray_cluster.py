@@ -38,18 +38,26 @@ WORKER_PORT_MAX = 30000
 NUM_PORTS_PER_WORKER = 50
 
 SBATCH_ARGS: dict[str, list[str]] = {}
-SBATCH_ARGS["bii"] = [
+
+# Rivanna
+SBATCH_ARGS["rivanna:bii"] = [
     "--partition=bii",
     "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
 ]
-SBATCH_ARGS["bii-gpu"] = [
+SBATCH_ARGS["rivanna:bii-gpu"] = [
     "--partition=bii-gpu",
     "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
 ]
-SBATCH_ARGS["bii-largemem-intel"] = [
+SBATCH_ARGS["rivanna:bii-largemem-intel"] = [
     "--partition=bii-largemem",
     "--constraint=intel",
     "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+]
+
+# Anvil
+SBATCH_ARGS["anvil:wholenode"] = [
+    "--partition=wholenode",
+    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --mem=0",
 ]
 
 
