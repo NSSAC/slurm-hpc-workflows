@@ -75,7 +75,7 @@ JOB_TYPE["rivanna:bii-largemem-intel"] = dict(
 JOB_TYPE["anvil:wholenode"] = dict(
     sbatch_args=[
         "--partition=wholenode",
-        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --mem=0",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --exclusive",
     ],
     num_cpus=128,
     num_gpus=0,
