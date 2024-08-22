@@ -26,7 +26,7 @@ dependencies = [
     "pydantic",
     "platformdirs",
     "python-dotenv",
-    "psycopg2",
+    "psycopg2-binary",
     "ray[default]",
     "optuna",
     "optuna-dashboard"
