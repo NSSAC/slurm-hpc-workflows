@@ -37,28 +37,50 @@ WORKER_PORT_MIN = 20000
 WORKER_PORT_MAX = 30000
 NUM_PORTS_PER_WORKER = 50
 
-SBATCH_ARGS: dict[str, list[str]] = {}
+JOB_TYPE: dict[str, dict] = {}
 
 # Rivanna
-SBATCH_ARGS["rivanna:bii"] = [
-    "--partition=bii",
-    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
-]
-SBATCH_ARGS["rivanna:bii-gpu"] = [
-    "--partition=bii-gpu",
-    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
-]
-SBATCH_ARGS["rivanna:bii-largemem-intel"] = [
-    "--partition=bii-largemem",
-    "--constraint=intel",
-    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
-]
+JOB_TYPE["rivanna:bii"] = dict(
+    sbatch_args=[
+        "--partition=bii",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+    ],
+    num_cpus=37,
+    num_gpus=0,
+    resources={},
+)
+
+JOB_TYPE["rivanna:bii-gpu"] = dict(
+    sbatch_args=[
+        "--partition=bii-gpu",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
+    ],
+    num_cpus=37,
+    num_gpus=4,
+    resources={},
+)
+
+JOB_TYPE["rivanna:bii-largemem-intel"] = dict(
+    sbatch_args=[
+        "--partition=bii-largemem",
+        "--constraint=intel",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+    ],
+    num_cpus=37,
+    num_gpus=0,
+    resources={},
+)
 
 # Anvil
-SBATCH_ARGS["anvil:wholenode"] = [
-    "--partition=wholenode",
-    "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --mem=0",
-]
+JOB_TYPE["anvil:wholenode"] = dict(
+    sbatch_args=[
+        "--partition=wholenode",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --mem=0",
+    ],
+    num_cpus=128,
+    num_gpus=0,
+    resources={},
+)
 
 
 @dataclass
@@ -75,41 +97,15 @@ class WorkerType:
 def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[WorkerType]:
     worker_types: list[WorkerType] = []
 
-    worker_types.append(
-        WorkerType(
-            name="bii",
-            ray_executable=ray_executable,
-            sbatch_args=SBATCH_ARGS["bii"],
-            setup_script=setup_script,
-            num_cpus=37,
-            num_gpus=0,
-            resources={},
+    for name, job_type_kwargs in JOB_TYPE.items():
+        worker_types.append(
+            WorkerType(
+                name=name,
+                ray_executable=ray_executable,
+                setup_script=setup_script,
+                **job_type_kwargs,
+            )
         )
-    )
-
-    worker_types.append(
-        WorkerType(
-            name="bii-largemem-intel",
-            ray_executable=ray_executable,
-            sbatch_args=SBATCH_ARGS["bii-largemem-intel"],
-            setup_script=setup_script,
-            num_cpus=37,
-            num_gpus=0,
-            resources={},
-        )
-    )
-
-    worker_types.append(
-        WorkerType(
-            name="bii-gpu",
-            ray_executable=ray_executable,
-            sbatch_args=SBATCH_ARGS["bii-gpu"],
-            setup_script=setup_script,
-            num_cpus=37,
-            num_gpus=4,
-            resources={},
-        )
-    )
 
     return worker_types
 

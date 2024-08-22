@@ -8,14 +8,14 @@ import click
 
 from .utils import find_jupyter, find_setup_script
 from .slurm_job_manager import SlurmJobManager
-from .ray_cluster import SBATCH_ARGS
+from .ray_cluster import JOB_TYPE
 
 
 @click.command()
 @click.option(
     "--type",
     required=True,
-    type=click.Choice(list(SBATCH_ARGS)),
+    type=click.Choice(list(JOB_TYPE.keys())),
     help="Type of allocation for job.",
 )
 @click.option("--account", required=True, type=str, help="Account to be used.")
@@ -40,7 +40,7 @@ def run_jupyter(
     """Start a Jupyter Lab instance."""
     name = "jupyter"
 
-    sbatch_args = SBATCH_ARGS[type]
+    sbatch_args = JOB_TYPE[type]["sbatch_args"]
     sbatch_args.append(f"--account {account}")
     sbatch_args.append(f"--time {runtime_h}:00:00")
     if qos:
