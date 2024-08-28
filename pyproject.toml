@@ -30,7 +30,8 @@ dependencies = [
     "ray[default]",
     "optuna",
     "optuna-dashboard",
-    "more-itertools"
+    "more-itertools",
+    "dask[complete]"
 ]
 
 [tool.setuptools.packages.find]

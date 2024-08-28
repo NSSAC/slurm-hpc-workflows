@@ -14,7 +14,11 @@ from datetime import datetime
 from dataclasses import dataclass
 from collections import defaultdict
 
+from dask import config as dask_config
+
 import ray
+from ray.util.dask import ray_dask_get
+
 import platformdirs
 from more_itertools import chunked
 from pydantic import BaseModel
@@ -130,6 +134,7 @@ class RayCluster(Closeable):
         log_to_driver: bool = False,
         ray_executable: Path | str | None = None,
         setup_script: Path | str | None = None,
+        setup_dask_scheduler: bool = True,
         verbose: bool = False,
     ):
         user = os.environ["USER"]
@@ -220,9 +225,10 @@ class RayCluster(Closeable):
             print(f"executing: {cmd_str}")
         cmd = shlex.split(cmd)
 
-        # env = dict(os.environ)
+        env = dict(os.environ)
         # env["RAY_PROMETHEUS_HOST"] = self.prometheus.web_url
         # env["RAY_GRAFANA_HOST"] = self.grafana.dashboard_url
+        env["RAY_scheduler_spread_threshold"] = "0.0"
 
         self._head_proc: subprocess.Popen | None
         with open(self.work_dir / "head.log", "at") as fobj:
@@ -232,7 +238,7 @@ class RayCluster(Closeable):
                     stdout=fobj,
                     stderr=subprocess.STDOUT,
                     stdin=subprocess.DEVNULL,
-                    # env=env,
+                    env=env,
                 )
 
         self.worker_types: dict[str, WorkerType] = {}
@@ -247,6 +253,10 @@ class RayCluster(Closeable):
         self.dashboard_url = f"http://{self.dashboard_host}:{self.dashboard_port}"
 
         ray.init(self.client_address, log_to_driver=log_to_driver)
+
+        if setup_dask_scheduler:
+            dask_config.set(scheduler=ray_dask_get)
+
         atexit.register(self.close)
 
         print(f"Ray dashboard URL: {self.dashboard_url}")
@@ -293,6 +303,8 @@ class RayCluster(Closeable):
         }}
 
         trap exit_trap EXIT
+
+        export RAY_scheduler_spread_threshold=0.0
 
         # Use ib0 ip for ray
         NODE_IP=$( ip addr show dev ib0 | awk '/inet/ {{print $2}}' | cut -d / -f 1 | head -n 1 )
