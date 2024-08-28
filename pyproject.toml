@@ -29,7 +29,8 @@ dependencies = [
     "psycopg2-binary",
     "ray[default]",
     "optuna",
-    "optuna-dashboard"
+    "optuna-dashboard",
+    "more-itertools"
 ]
 
 [tool.setuptools.packages.find]
