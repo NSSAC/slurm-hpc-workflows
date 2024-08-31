@@ -14,7 +14,9 @@ def setup_ray_on_dask():
 
 @ray.remote
 def _ray_map_kwargs_chunk(func, kwargs_list_chunk):
-    results = [func(**kwargs) for kwargs in kwargs_list_chunk]
+    results = []
+    for kwargs in kwargs_list_chunk:
+        results.append(func(**kwargs))
     return results
 
 
@@ -24,26 +26,27 @@ def ray_map_kwargs(
     chunksize: int,
     **ray_options_kwargs,
 ):
-    ray_map_kwargs_chunk = _ray_map_kwargs_chunk.options(**ray_options_kwargs)  # type: ignore
-
-    kwargs_list_chunks = list(chunked(kwargs_list, chunksize))
-    tasks = [
-        ray_map_kwargs_chunk.remote(func, kwargs_list_chunk)
-        for kwargs_list_chunk in kwargs_list_chunks
-    ]
+    tasks = []
+    for idx, kwargs_list_chunk in enumerate(chunked(kwargs_list, chunksize)):
+        name = f"map-{func.__name__}-chunk-{idx}"
+        task = _ray_map_kwargs_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
+        task = task.remote(func, kwargs_list_chunk)
+        tasks.append(task)
     results = ray.get(tasks)
 
-    ret = []
+    final_result = []
     for result in results:
-        ret.extend(result)
+        final_result.extend(result)
 
-    return ret
+    return final_result
 
 
 @ray.remote
 def _ray_apply_kwargs_chunk(func, kwargs_list_chunk):
     for kwargs in kwargs_list_chunk:
         func(**kwargs)
+
+    return True
 
 
 def ray_apply_kwargs(
@@ -52,11 +55,14 @@ def ray_apply_kwargs(
     chunksize: int,
     **ray_options_kwargs,
 ):
-    ray_apply_kwargs_chunk = _ray_apply_kwargs_chunk.options(**ray_options_kwargs)  # type: ignore
+    tasks = []
+    for idx, kwargs_list_chunk in enumerate(chunked(kwargs_list, chunksize)):
+        name = f"apply-{func.__name__}-chunk-{idx}"
+        task = _ray_apply_kwargs_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
+        task = task.remote(func, kwargs_list_chunk)
+        tasks.append(task)
 
-    kwargs_list_chunks = list(chunked(kwargs_list, chunksize))
-    tasks = [
-        ray_apply_kwargs_chunk.remote(func, kwargs_list_chunk)
-        for kwargs_list_chunk in kwargs_list_chunks
-    ]
-    _ = ray.get(tasks)
+    results = ray.get(tasks)
+    assert all(results), "Unexpected result."
+
+    return True
