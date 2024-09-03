@@ -83,6 +83,17 @@ JOB_TYPE["rivanna:rivanna"] = dict(
     resources={},
 )
 
+JOB_TYPE["rivanna:afton"] = dict(
+    sbatch_args=[
+        "--partition=standard",
+        "--constraint=afton",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=96 --exclusive",
+    ],
+    num_cpus=96,
+    num_gpus=0,
+    resources={},
+)
+
 # Anvil
 JOB_TYPE["anvil:wholenode"] = dict(
     sbatch_args=[
