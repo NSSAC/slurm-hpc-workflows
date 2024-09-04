@@ -48,7 +48,7 @@ JOB_TYPE["rivanna:bii"] = dict(
     ],
     num_cpus=37,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:bii-gpu"] = dict(
@@ -58,7 +58,7 @@ JOB_TYPE["rivanna:bii-gpu"] = dict(
     ],
     num_cpus=37,
     num_gpus=4,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:bii-largemem:intel48"] = dict(
@@ -69,7 +69,7 @@ JOB_TYPE["rivanna:bii-largemem:intel48"] = dict(
     ],
     num_cpus=48,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:bii-largemem:intel40"] = dict(
@@ -81,7 +81,7 @@ JOB_TYPE["rivanna:bii-largemem:intel40"] = dict(
     ],
     num_cpus=40,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:bii-largemem:amd"] = dict(
@@ -92,7 +92,7 @@ JOB_TYPE["rivanna:bii-largemem:amd"] = dict(
     ],
     num_cpus=128,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:rivanna"] = dict(
@@ -103,7 +103,7 @@ JOB_TYPE["rivanna:rivanna"] = dict(
     ],
     num_cpus=40,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 JOB_TYPE["rivanna:afton"] = dict(
@@ -114,7 +114,7 @@ JOB_TYPE["rivanna:afton"] = dict(
     ],
     num_cpus=96,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 # Anvil
@@ -125,7 +125,7 @@ JOB_TYPE["anvil:wholenode"] = dict(
     ],
     num_cpus=128,
     num_gpus=0,
-    resources={},
+    resources=dict(node=1),
 )
 
 
@@ -176,6 +176,7 @@ class RayCluster(Closeable):
         ray_executable: Path | str | None = None,
         setup_script: Path | str | None = None,
         verbose: bool = False,
+        working_head: bool = True,
     ):
         user = os.environ["USER"]
         address = data_address(None)
@@ -240,26 +241,56 @@ class RayCluster(Closeable):
         raylet_socket_name = self.temp_dir / f"raylet-socket-{my_pid}.sock"
 
         print("Starting Ray head service ...")
-        cmd = f"""
-        '{ray_executable!s}' start
-            --head
-            --node-ip-address={self.host}
-            --node-name='head'
-            --port={self.port}
-            --include-dashboard=true
-            --dashboard-host=''
-            --dashboard-port={self.dashboard_port}
-            --ray-client-server-port={self.client_server_port}
-            --plasma-directory='{self.plasma_dir!s}'
-            --temp-dir='{self.temp_dir!s}'
-            --plasma-store-socket-name='{plasma_store_socket_name!s}'
-            --raylet-socket-name='{raylet_socket_name!s}'
-            --disable-usage-stats
-            --verbose
-            --log-style pretty
-            --log-color false
-            --block
-        """
+        if working_head:
+            resources_json = json.dumps(dict(node=1))
+
+            cmd = f"""
+            '{ray_executable!s}' start
+                --head
+                --node-ip-address={self.host}
+                --node-name='head'
+                --port={self.port}
+                --include-dashboard=true
+                --dashboard-host=''
+                --dashboard-port={self.dashboard_port}
+                --ray-client-server-port={self.client_server_port}
+                --plasma-directory='{self.plasma_dir!s}'
+                --temp-dir='{self.temp_dir!s}'
+                --plasma-store-socket-name='{plasma_store_socket_name!s}'
+                --raylet-socket-name='{raylet_socket_name!s}'
+                --disable-usage-stats
+                --verbose
+                --log-style pretty
+                --log-color false
+                --resources='{resources_json}'
+                --block
+            """
+        else:
+            resources_json = json.dumps(dict(node=0))
+
+            cmd = f"""
+            '{ray_executable!s}' start
+                --head
+                --node-ip-address={self.host}
+                --node-name='head'
+                --port={self.port}
+                --include-dashboard=true
+                --dashboard-host=''
+                --dashboard-port={self.dashboard_port}
+                --ray-client-server-port={self.client_server_port}
+                --plasma-directory='{self.plasma_dir!s}'
+                --temp-dir='{self.temp_dir!s}'
+                --plasma-store-socket-name='{plasma_store_socket_name!s}'
+                --raylet-socket-name='{raylet_socket_name!s}'
+                --disable-usage-stats
+                --verbose
+                --log-style pretty
+                --log-color false
+                --num-cpus=0
+                --num-gpus=0
+                --resources='{resources_json}'
+                --block
+            """
         if verbose:
             cmd_str = dedent(cmd.strip())
             print(f"executing: {cmd_str}")
