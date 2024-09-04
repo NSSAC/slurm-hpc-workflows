@@ -61,10 +61,22 @@ JOB_TYPE["rivanna:bii-gpu"] = dict(
     resources={},
 )
 
-JOB_TYPE["rivanna:bii-largemem:intel"] = dict(
+JOB_TYPE["rivanna:bii-largemem:intel48"] = dict(
     sbatch_args=[
         "--partition=bii-largemem",
         "--constraint=intel",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=48 --mem=0 --exclusive",
+    ],
+    num_cpus=48,
+    num_gpus=0,
+    resources={},
+)
+
+JOB_TYPE["rivanna:bii-largemem:intel40"] = dict(
+    sbatch_args=[
+        "--partition=bii-largemem",
+        "--constraint=intel",
+        "--exclude=udc-aj36-[15-20]",
         "--nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --mem=0 --exclusive",
     ],
     num_cpus=40,
