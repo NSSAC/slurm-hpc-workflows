@@ -127,25 +127,6 @@ Ensure that `myenv` is still activated.
 $ jupyter lab password
 ```
 
-## Start jupyter from ray-hpc-workflows
-
-Ensure that `myenv` is still activated.
-
-```
-$ run-jupyter --type rivanna:bii --account <ACCOUNT-NAME> --runtime-h 2
-```
-
-Wait for the job to start.
-You can monitor it using the `squeue` command.
-
-```
-$ squeue -u $USER
-```
-
-Once the job has started, note the hostname assigned to the job.
-This should be under the NODELIST column of squeue's output.
-This should be of the form `udc-XXX-XXX`
-
 ## Set up Foxy Proxy on your local computer to access Jupyter
 
 Install FoxyProxy Standard for your browser.
@@ -162,9 +143,30 @@ From your browser's addon section configure configure FoxyProxy
 and import the configuration file.
 Once imported, ensure that FoxyProxy is configured to enable proxy by patterns.
 
+## Start jupyter from ray-hpc-workflows on Rivanna
+
+Ensure you are logged into Rivanna via ssh.
+Also ensure that `myenv` is still activated.
+
+```
+$ run-jupyter --type rivanna:bii --account <ACCOUNT-NAME> --runtime-h 2
+```
+
+Wait for the job to start.
+You can monitor it using the `squeue` command.
+
+```
+$ squeue -u $USER
+```
+
+Once the job has started, note the hostname assigned to the job.
+This should be under the NODELIST column of squeue's output.
+This should be of the form `udc-XXX-XXX`
+
 ## Setup a socks proxy over ssh on your local computer to enable your browser to connect to Rivanna
 
 On Linux and MacOS systems the following command should work.
+Run the command in a new terminal.
 
 ```
 ssh -o ExitOnForwardFailure=yes -N -D 127.0.0.1:12001 <username>@rivanna.hpc.virginia.edu
@@ -176,3 +178,9 @@ Use the following url: `http://udc-XXX-XXX:8888`
 Replace the hostname part `udc-XXX-XXX` with the actual hostname where
 jupyter notebook is running.
 
+## Stop Jupyter Lab on Rivanna when no longer in use
+
+Once your session is over ensure that you cancel any running Jupyter Lab or
+ray-worker sessions.
+
+Use `squeue` to see if any are running and use `scancel` to stop those jobs.
