@@ -1,4 +1,4 @@
-# Howto setup ray-hpc-workflows on Rivanna
+# How to setup ray-hpc-workflows on Rivanna
 
 ## Setup your personal minforge environment
 
@@ -126,3 +126,53 @@ Ensure that `myenv` is still activated.
 ```
 $ jupyter lab password
 ```
+
+## Start jupyter from ray-hpc-workflows
+
+Ensure that `myenv` is still activated.
+
+```
+$ run-jupyter --type rivanna:bii --account <ACCOUNT-NAME> --runtime-h 2
+```
+
+Wait for the job to start.
+You can monitor it using the `squeue` command.
+
+```
+$ squeue -u $USER
+```
+
+Once the job has started, note the hostname assigned to the job.
+This should be under the NODELIST column of squeue's output.
+This should be of the form `udc-XXX-XXX`
+
+## Set up Foxy Proxy on your local computer to access Jupyter
+
+Install FoxyProxy Standard for your browser.
+
+* [FoxyProxy Standard for Google Chrome](https://chromewebstore.google.com/detail/foxyproxy/gcknhkkoolaabfmlnjonogaaifnjlfnp?pli=1)
+* [FoxyProxy Standard for Firefox](https://addons.mozilla.org/en-US/firefox/addon/foxyproxy-standard/)
+* [FoxyProxy Standard for Edge](https://microsoftedge.microsoft.com/addons/detail/foxyproxy/flcnoalcefgkhkinjkffipfdhglnpnem)
+
+Download the FoxyProxy configuration for Rivanna.
+
+* [FoxyProxy Configuration for Rivanna](../extra/Rivanna-FoxyProxy_2024-06-06.json)
+
+From your browser's addon section configure configure FoxyProxy
+and import the configuration file.
+Once imported, ensure that FoxyProxy is configured to enable proxy by patterns.
+
+## Setup a socks proxy over ssh to enable your browser to connect to Rivanna
+
+On Linux and MacOS systems the following command should work.
+
+```
+ssh -o ExitOnForwardFailure=yes -N -D 127.0.0.1:12001 <username>@rivanna.hpc.virginia.edu
+```
+
+## Connect to the Jupyter notebook from your local browser
+
+Use the following url: `http://udc-XXX-XXX:8888`
+Replace the hostname part `udc-XXX-XXX` with the actual hostname where
+jupyter notebook is running.
+
