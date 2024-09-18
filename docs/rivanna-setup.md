@@ -88,7 +88,7 @@ $ git clone https://github.com/NSSAC/ray-hpc-workflows.git
 
 # Install ray-hpc-workflows
 $ cd ray-hpc-workflows
-$ pip install -e ray-hpc-workflows
+$ pip install -e .
 ```
 
 ## Create default setup script for ray-hpc-workflows
