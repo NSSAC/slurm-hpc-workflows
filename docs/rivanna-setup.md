@@ -162,7 +162,7 @@ From your browser's addon section configure configure FoxyProxy
 and import the configuration file.
 Once imported, ensure that FoxyProxy is configured to enable proxy by patterns.
 
-## Setup a socks proxy over ssh to enable your browser to connect to Rivanna
+## Setup a socks proxy over ssh on your local computer to enable your browser to connect to Rivanna
 
 On Linux and MacOS systems the following command should work.
 
@@ -170,7 +170,7 @@ On Linux and MacOS systems the following command should work.
 ssh -o ExitOnForwardFailure=yes -N -D 127.0.0.1:12001 <username>@rivanna.hpc.virginia.edu
 ```
 
-## Connect to the Jupyter notebook from your local browser
+## Connect to the Jupyter notebook on Rivanna from your local browser
 
 Use the following url: `http://udc-XXX-XXX:8888`
 Replace the hostname part `udc-XXX-XXX` with the actual hostname where
