@@ -28,8 +28,6 @@ dependencies = [
     "python-dotenv",
     "psycopg2-binary",
     "ray[default]",
-    "optuna",
-    "optuna-dashboard",
     "more-itertools",
     "dask[complete]"
 ]
