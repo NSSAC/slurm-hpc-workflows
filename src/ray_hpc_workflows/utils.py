@@ -39,7 +39,6 @@ find_sbatch = partial(_find_executable, "sbatch")
 find_ray = partial(_find_executable, "ray")
 find_jupyter = partial(_find_executable, "jupyter")
 find_postgres = partial(_find_executable, "postgres")
-find_optuna_dashboard = partial(_find_executable, "optuna-dashboard")
 find_prometheus = partial(_find_executable, "prometheus")
 find_grafana = partial(_find_executable, "grafana")
 

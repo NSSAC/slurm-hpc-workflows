@@ -28,9 +28,9 @@ ENVIRONMENT = jinja2.Environment(
 
 
 def get_clean_environ() -> dict[str, str]:
-    """Crate environment dict without SLURM set variables.
+    """Create environment dict without SLURM set variables.
 
-    This is an issue when submitting slurm jobs from within slurm jobs.
+    This is an issue when submitting Slurm jobs from within Slurm jobs.
     """
     sanitized_env: dict[str, str] = {}
     for k, v in os.environ.items():
@@ -66,7 +66,7 @@ def get_running_jobids(squeue_exe: str, slurm_user: str, timeout: int) -> set[in
 
 
 def cancel_jobs(scancel_exe: str, job_ids: list[int], timeout: int):
-    """Run scancel command for the given jobids."""
+    """Run scancel command for the given job ids."""
     if not job_ids:
         return
 
@@ -75,7 +75,7 @@ def cancel_jobs(scancel_exe: str, job_ids: list[int], timeout: int):
 
 
 class SlurmJob(BaseModel):
-    """A submitted slurm job."""
+    """A submitted Slurm job."""
 
     name: str
     sbatch_args: list[str]
@@ -153,7 +153,7 @@ def submit_sbatch_job(
 
 
 class SlurmJobManager(Closeable):
-    """Manage slurm jobs."""
+    """Manage Slurm jobs."""
 
     def __init__(
         self,

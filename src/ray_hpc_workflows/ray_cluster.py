@@ -44,9 +44,9 @@ JOB_TYPE: dict[str, dict] = {}
 JOB_TYPE["rivanna:bii"] = dict(
     sbatch_args=[
         "--partition=bii",
-        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --mem=0",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --mem=0",
     ],
-    num_cpus=37,
+    num_cpus=40,
     num_gpus=0,
     resources=dict(node=1),
 )
@@ -54,9 +54,9 @@ JOB_TYPE["rivanna:bii"] = dict(
 JOB_TYPE["rivanna:bii-gpu"] = dict(
     sbatch_args=[
         "--partition=bii-gpu",
-        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=37 --gres=gpu:4 --mem=0",
+        "--nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --gres=gpu:4 --mem=0",
     ],
-    num_cpus=37,
+    num_cpus=40,
     num_gpus=4,
     resources=dict(node=1),
 )
@@ -178,6 +178,21 @@ class RayCluster(Closeable):
         verbose: bool = False,
         working_head: bool = True,
     ):
+        """
+        Initialize.
+
+        Args:
+            account: Slurm account name.
+            runtime_h: Max runtime of jobs created using the cluster.
+            work_dir: Path where log files and scripts will be created.
+            sjm: Slurm job manager instance.
+            qos: Slurm QOS to be used when creating jobs.
+            reservation: Slurm reservation to use when creating jobs.
+            log_to_driver: Passed to ray.init()
+            setup_script: Setup script (bash) to be used for initializing jobs.
+            verbose: Show verbose output.
+            working_head: If true, head node resources will be used for running jobs.
+        """
         user = os.environ["USER"]
         address = data_address(None)
         ray_executable = find_ray(ray_executable)
