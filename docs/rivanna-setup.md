@@ -1,6 +1,6 @@
 # How to setup ray-hpc-workflows on Rivanna
 
-## Setup your personal minforge environment
+## Setup your personal Miniforge environment
 
 For this setup we shall use the Conda package manager.
 We shall not be using the conda modules from Rivanna's module system.
@@ -45,7 +45,7 @@ pkgs_dirs:
 $ conda update -n base --all --yes
 ```
 
-## Setup Cross-Desktop Group (XDG) user diectories
+## Setup Cross-Desktop Group (XDG) user directories
 
 Ray HPC workflows uses the XDG user directories
 for storing temporary and runtime files.
@@ -59,7 +59,7 @@ export XDG_STATE_HOME="/scratch/$USER/var/state"
 export XDG_RUNTIME_DIR="/scratch/$USER/var/runtime"
 ```
 
-Create the the directories.
+Create the XDG directories.
 
 ```
 # Execute bash to allow the new shell config to be used.
