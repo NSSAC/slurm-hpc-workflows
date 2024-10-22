@@ -414,25 +414,39 @@ class RayCluster(Closeable):
         worker_info = WorkerInfo(slurm_job=job, worker_ports=worker_ports)
         self.workers[name].append(worker_info)
 
+    def num_cpus_requested(self) -> int:
+        """Return the number of CPUs requested."""
+        ret = 0
+
+        for k, vs in self.workers.items():
+            ret += KNWON_JOB_TYPES[k].num_cpus * len(vs)
+
+        if self.head_job_type is not None:
+            ret += self.head_job_type.num_cpus
+
+        return ret
+
+    def num_gpus_requested(self) -> int:
+        """Return the number of GPUs requested."""
+        ret = 0
+
+        for k, vs in self.workers.items():
+            ret += KNWON_JOB_TYPES[k].num_gpus * len(vs)
+
+        if self.head_job_type is not None:
+            ret += self.head_job_type.num_gpus
+
+        return ret
+
     def resource_requested(self, name: str) -> float:
-        """Return the amount of resource requested for a given resource."""
+        """Return the amount of resource requested."""
         ret = 0.0
 
         for k, vs in self.workers.items():
-            if name == "num_cpus":
-                ret += KNWON_JOB_TYPES[k].num_cpus * len(vs)
-            elif name == "num_gpus":
-                ret += KNWON_JOB_TYPES[k].num_gpus * len(vs)
-            else:
-                ret += KNWON_JOB_TYPES[k].resources.get(name, 0) * len(vs)
+            ret += KNWON_JOB_TYPES[k].resources.get(name, 0) * len(vs)
 
         if self.head_job_type is not None:
-            if name == "num_cpus":
-                ret += self.head_job_type.num_cpus
-            elif name == "num_gpus":
-                ret += self.head_job_type.num_gpus
-            else:
-                ret += self.head_job_type.resources.get(name, 0)
+            ret += self.head_job_type.resources.get(name, 0)
 
         return ret
 
