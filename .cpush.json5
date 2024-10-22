@@ -2,6 +2,6 @@
     project: "ray-hpc-workflows",
     remotes: {
         rivanna: "rivanna:ray-hpc-workflows",
-        anvil: "anvil:ray-hpc-workflows",
+        // anvil: "anvil:ray-hpc-workflows",
     }
 }
