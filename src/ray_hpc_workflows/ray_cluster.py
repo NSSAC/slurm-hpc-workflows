@@ -38,10 +38,19 @@ WORKER_PORT_MIN = 20000
 WORKER_PORT_MAX = 30000
 NUM_PORTS_PER_WORKER = 50
 
-JOB_TYPE: dict[str, dict] = {}
+
+@dataclass
+class JobType:
+    sbatch_args: list[str]
+    num_cpus: int
+    num_gpus: int
+    resources: dict[str, int]
+
+
+KNWON_JOB_TYPES: dict[str, JobType] = {}
 
 # Rivanna
-JOB_TYPE["rivanna:bii"] = dict(
+KNWON_JOB_TYPES["rivanna:bii"] = JobType(
     sbatch_args=[
         "--partition=bii",
         "--nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --mem=0",
@@ -51,7 +60,7 @@ JOB_TYPE["rivanna:bii"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:bii-gpu"] = dict(
+KNWON_JOB_TYPES["rivanna:bii-gpu"] = JobType(
     sbatch_args=[
         "--partition=bii-gpu",
         "--nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --gres=gpu:4 --mem=0",
@@ -61,7 +70,7 @@ JOB_TYPE["rivanna:bii-gpu"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:bii-largemem:intel48"] = dict(
+KNWON_JOB_TYPES["rivanna:bii-largemem:intel48"] = JobType(
     sbatch_args=[
         "--partition=bii-largemem",
         "--constraint=intel",
@@ -72,7 +81,7 @@ JOB_TYPE["rivanna:bii-largemem:intel48"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:bii-largemem:intel40"] = dict(
+KNWON_JOB_TYPES["rivanna:bii-largemem:intel40"] = JobType(
     sbatch_args=[
         "--partition=bii-largemem",
         "--constraint=intel",
@@ -84,7 +93,7 @@ JOB_TYPE["rivanna:bii-largemem:intel40"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:bii-largemem:amd"] = dict(
+KNWON_JOB_TYPES["rivanna:bii-largemem:amd"] = JobType(
     sbatch_args=[
         "--partition=bii-largemem",
         "--constraint=amd",
@@ -95,7 +104,7 @@ JOB_TYPE["rivanna:bii-largemem:amd"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:rivanna"] = dict(
+KNWON_JOB_TYPES["rivanna:rivanna"] = JobType(
     sbatch_args=[
         "--partition=standard",
         "--constraint=rivanna",
@@ -106,7 +115,7 @@ JOB_TYPE["rivanna:rivanna"] = dict(
     resources=dict(node=1),
 )
 
-JOB_TYPE["rivanna:afton"] = dict(
+KNWON_JOB_TYPES["rivanna:afton"] = JobType(
     sbatch_args=[
         "--partition=standard",
         "--constraint=afton",
@@ -118,7 +127,7 @@ JOB_TYPE["rivanna:afton"] = dict(
 )
 
 # Anvil
-JOB_TYPE["anvil:wholenode"] = dict(
+KNWON_JOB_TYPES["anvil:wholenode"] = JobType(
     sbatch_args=[
         "--partition=wholenode",
         "--nodes=1 --ntasks-per-node=1 --cpus-per-task=128 --exclusive",
@@ -129,31 +138,10 @@ JOB_TYPE["anvil:wholenode"] = dict(
 )
 
 
-@dataclass
-class WorkerType:
-    name: str
-    ray_executable: Path
-    sbatch_args: list[str]
-    setup_script: Path
-    num_cpus: int
-    num_gpus: int
-    resources: dict[str, int]
-
-
-def builtin_worker_types(ray_executable: Path, setup_script: Path) -> list[WorkerType]:
-    worker_types: list[WorkerType] = []
-
-    for name, job_type_kwargs in JOB_TYPE.items():
-        worker_types.append(
-            WorkerType(
-                name=name,
-                ray_executable=ray_executable,
-                setup_script=setup_script,
-                **job_type_kwargs,
-            )
-        )
-
-    return worker_types
+def define_job_type(name: str, job_type: JobType) -> None:
+    if name in KNWON_JOB_TYPES:
+        raise RuntimeError(f"Job type '{name}' already defined")
+    KNWON_JOB_TYPES[name] = job_type
 
 
 class WorkerInfo(BaseModel):
@@ -175,8 +163,8 @@ class RayCluster(Closeable):
         log_to_driver: bool = False,
         ray_executable: Path | str | None = None,
         setup_script: Path | str | None = None,
+        head_job_type: str | None = None,
         verbose: bool = False,
-        working_head: bool = True,
     ):
         """
         Initialize.
@@ -190,13 +178,14 @@ class RayCluster(Closeable):
             reservation: Slurm reservation to use when creating jobs.
             log_to_driver: Passed to ray.init()
             setup_script: Setup script (bash) to be used for initializing jobs.
+            head_job_type: If not None, defines the job type of the head node.
+                If None the head node is not used for Ray tasks.
             verbose: Show verbose output.
-            working_head: If true, head node resources will be used for running jobs.
         """
         user = os.environ["USER"]
         address = data_address(None)
-        ray_executable = find_ray(ray_executable)
-        setup_script = find_setup_script(setup_script)
+        self.ray_executable = find_ray(ray_executable)
+        self.setup_script = find_setup_script(setup_script)
 
         port = arbitrary_free_port(address)
         dashboard_port = arbitrary_free_port("")
@@ -256,11 +245,12 @@ class RayCluster(Closeable):
         raylet_socket_name = self.temp_dir / f"raylet-socket-{my_pid}.sock"
 
         print("Starting Ray head service ...")
-        if working_head:
-            resources_json = json.dumps(dict(node=1))
+        if head_job_type is not None:
+            job_type = KNWON_JOB_TYPES[head_job_type]
+            resources_json = json.dumps(job_type.resources)
 
             cmd = f"""
-            '{ray_executable!s}' start
+            '{self.ray_executable!s}' start
                 --head
                 --node-ip-address={self.host}
                 --node-name='head'
@@ -277,6 +267,8 @@ class RayCluster(Closeable):
                 --verbose
                 --log-style pretty
                 --log-color false
+                --num-cpus={job_type.num_cpus}
+                --num-gpus={job_type.num_gpus}
                 --resources='{resources_json}'
                 --block
             """
@@ -284,7 +276,7 @@ class RayCluster(Closeable):
             resources_json = json.dumps(dict(node=0))
 
             cmd = f"""
-            '{ray_executable!s}' start
+            '{self.ray_executable!s}' start
                 --head
                 --node-ip-address={self.host}
                 --node-name='head'
@@ -327,9 +319,6 @@ class RayCluster(Closeable):
                     env=env,
                 )
 
-        self.worker_types: dict[str, WorkerType] = {}
-        for worker_type in builtin_worker_types(ray_executable, setup_script):
-            self.worker_types[worker_type.name] = worker_type
         self.next_worker_index: dict[str, int] = defaultdict(int)
         self.workers: dict[str, list[WorkerInfo]] = defaultdict(list)
         self.used_worker_ports = set()
@@ -344,22 +333,15 @@ class RayCluster(Closeable):
 
         print(f"Ray dashboard URL: {self.dashboard_url}")
 
-    def define_worker(self, worker_type: WorkerType):
-        """Define the new worker type."""
-        if worker_type.name in self.worker_types:
-            raise RuntimeError(
-                f"Worker type '{worker_type.name}' has already been defined."
-            )
-
-        self.worker_types[worker_type.name] = worker_type
-
-    def add_worker(self, worker_type: WorkerType) -> None:
+    def add_worker(self, name: str) -> None:
         """Add a worker of the given type."""
+        worker_type = KNWON_JOB_TYPES[name]
+
         resources_json = json.dumps(worker_type.resources)
 
-        worker_index = self.next_worker_index[worker_type.name]
-        self.next_worker_index[worker_type.name] += 1
-        worker_name = f"ray_worker.{worker_type.name}.{worker_index}"
+        worker_index = self.next_worker_index[name]
+        self.next_worker_index[name] += 1
+        worker_name = f"ray_worker.{name}.{worker_index}"
 
         worker_ports = set()
         while len(worker_ports) < NUM_PORTS_PER_WORKER:
@@ -372,17 +354,18 @@ class RayCluster(Closeable):
 
         worker_script = rf"""
         . '/etc/profile'
-        . '{worker_type.setup_script!s}'
+        . '{self.setup_script!s}'
 
         set -Eeuo pipefail
         set -x
 
         mkdir -p '{self.temp_dir!s}'
-        mkdir -p '{self.plasma_dir!s}'/$$
+        mkdir -p '{self.plasma_dir!s}'
 
         exit_trap () {{
             echo "Exiting."
-            rm -rf '{self.plasma_dir!s}'/$$
+            rm -rf '{self.temp_dir!s}'
+            rm -rf '{self.plasma_dir!s}'
         }}
 
         trap exit_trap EXIT
@@ -392,7 +375,7 @@ class RayCluster(Closeable):
         # Use ib0 ip for ray
         NODE_IP=$( ip addr show dev ib0 | awk '/inet/ {{print $2}}' | cut -d / -f 1 | head -n 1 )
 
-        '{worker_type.ray_executable!s}' start \
+        '{self.ray_executable!s}' start \
             --node-ip-address="$NODE_IP" \
             --worker-port-list="{worker_ports_str}" \
             --node-name='{worker_name}' \
@@ -400,9 +383,9 @@ class RayCluster(Closeable):
             --num-cpus={worker_type.num_cpus} \
             --num-gpus={worker_type.num_gpus} \
             --resources='{resources_json}' \
-            --plasma-directory='{self.plasma_dir!s}'/$$ \
-            --plasma-store-socket-name='{self.temp_dir!s}'/plasma-store-socket-$$.sock \
-            --raylet-socket-name='{self.temp_dir!s}'/raylet-socket-$$.sock \
+            --plasma-directory='{self.plasma_dir!s}' \
+            --plasma-store-socket-name='{self.temp_dir!s}'/plasma-store-socket.sock \
+            --raylet-socket-name='{self.temp_dir!s}'/raylet-socket.sock \
             --disable-usage-stats \
             --verbose \
             --log-style pretty \
@@ -428,19 +411,13 @@ class RayCluster(Closeable):
         )
 
         worker_info = WorkerInfo(slurm_job=job, worker_ports=worker_ports)
-        self.workers[worker_type.name].append(worker_info)
+        self.workers[name].append(worker_info)
 
     def scale_workers(self, worker_type_name: str, num_workers: int):
         """Ensure given number of HPC workers are running."""
-        # Check if the hpc worker has been defined
-        if worker_type_name not in self.worker_types:
-            raise RuntimeError(f"Worker '{worker_type_name}' has not been defined.")
-
-        worker_type = self.worker_types[worker_type_name]
-
         # If number of workers is less that what we have, we scale up
         while len(self.workers[worker_type_name]) < num_workers:
-            self.add_worker(worker_type)
+            self.add_worker(worker_type_name)
 
         # If number of workers is more than what we need, we scale down
         while len(self.workers[worker_type_name]) > num_workers:
@@ -456,7 +433,7 @@ class RayCluster(Closeable):
         """Shutdown the ray cluster and connections."""
         print("Closing ray cluster.")
 
-        for worker_type_name in self.worker_types:
+        for worker_type_name in KNWON_JOB_TYPES:
             self.scale_workers(worker_type_name, 0)
 
         ray.shutdown()
