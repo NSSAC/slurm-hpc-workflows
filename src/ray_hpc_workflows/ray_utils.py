@@ -2,6 +2,7 @@
 
 import math
 import random
+from typing import Callable
 from more_itertools import chunked
 
 import ray
@@ -15,32 +16,36 @@ def setup_ray_on_dask():
 
 
 def compute_chunksize(
-    kwargs_list: list[dict],
+    args_list: list[tuple],
     num_workers: int | None,
     over_decomp_factor: int,
 ) -> int:
     if num_workers is None:
         return 1
 
-    kwargs_list_len = len(kwargs_list)
+    args_list_len = len(args_list)
 
-    chunksize = kwargs_list_len / (num_workers * over_decomp_factor)
+    chunksize = args_list_len / (num_workers * over_decomp_factor)
     chunksize = int(math.ceil(chunksize))
     chunksize = max(1, chunksize)
     return chunksize
 
 
 @ray.remote
-def _ray_map_kwargs_chunk(func, kwargs_list_chunk):
+def _ray_map_chunk(func, args_list_chunk, extra_args):
     results = []
-    for kwargs in kwargs_list_chunk:
-        results.append(func(**kwargs))
+    for args in args_list_chunk:
+        if extra_args is not None:
+            args = list(args)
+            args.extend(extra_args)
+        results.append(func(*args))
     return results
 
 
-def ray_map_kwargs(
-    func,
-    kwargs_list: list[dict],
+def ray_map(
+    func: Callable,
+    args_list: list[tuple],
+    extra_args: tuple | None = None,
     chunksize: int | None = None,
     num_workers: int | None = None,
     over_decomp_factor: int = 10,
@@ -48,16 +53,16 @@ def ray_map_kwargs(
     **ray_options_kwargs,
 ):
     if chunksize is None:
-        chunksize = compute_chunksize(kwargs_list, num_workers, over_decomp_factor)
+        chunksize = compute_chunksize(args_list, num_workers, over_decomp_factor)
 
     if shuffle:
-        random.shuffle(kwargs_list)
+        random.shuffle(args_list)
 
     tasks = []
-    for idx, kwargs_list_chunk in enumerate(chunked(kwargs_list, chunksize)):
+    for idx, args_list_chunk in enumerate(chunked(args_list, chunksize)):
         name = f"map-{func.__name__}-chunk-{idx}"
-        task = _ray_map_kwargs_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
-        task = task.remote(func, kwargs_list_chunk)
+        task = _ray_map_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
+        task = task.remote(func, args_list_chunk, extra_args)
         tasks.append(task)
     results = ray.get(tasks)
 
@@ -69,16 +74,19 @@ def ray_map_kwargs(
 
 
 @ray.remote
-def _ray_apply_kwargs_chunk(func, kwargs_list_chunk):
-    for kwargs in kwargs_list_chunk:
-        func(**kwargs)
-
+def _ray_apply_chunk(func, args_list_chunk, extra_args):
+    for args in args_list_chunk:
+        if extra_args is not None:
+            args = list(args)
+            args.extend(extra_args)
+        func(**args)
     return True
 
 
-def ray_apply_kwargs(
-    func,
-    kwargs_list: list[dict],
+def ray_apply(
+    func: Callable,
+    args_list: list[tuple],
+    extra_args: tuple | None = None,
     chunksize: int | None = None,
     num_workers: int | None = None,
     over_decomp_factor: int = 10,
@@ -86,16 +94,16 @@ def ray_apply_kwargs(
     **ray_options_kwargs,
 ):
     if chunksize is None:
-        chunksize = compute_chunksize(kwargs_list, num_workers, over_decomp_factor)
+        chunksize = compute_chunksize(args_list, num_workers, over_decomp_factor)
 
     if shuffle:
-        random.shuffle(kwargs_list)
+        random.shuffle(args_list)
 
     tasks = []
-    for idx, kwargs_list_chunk in enumerate(chunked(kwargs_list, chunksize)):
+    for idx, args_list_chunk in enumerate(chunked(args_list, chunksize)):
         name = f"apply-{func.__name__}-chunk-{idx}"
-        task = _ray_apply_kwargs_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
-        task = task.remote(func, kwargs_list_chunk)
+        task = _ray_apply_chunk.options(name=name, **ray_options_kwargs)  # type: ignore
+        task = task.remote(func, args_list_chunk, extra_args)
         tasks.append(task)
 
     results = ray.get(tasks)
