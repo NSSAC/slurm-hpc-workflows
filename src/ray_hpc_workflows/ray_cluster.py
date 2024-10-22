@@ -246,8 +246,8 @@ class RayCluster(Closeable):
 
         print("Starting Ray head service ...")
         if head_job_type is not None:
-            job_type = KNWON_JOB_TYPES[head_job_type]
-            resources_json = json.dumps(job_type.resources)
+            self.head_job_type = KNWON_JOB_TYPES[head_job_type]
+            resources_json = json.dumps(self.head_job_type.resources)
 
             cmd = f"""
             '{self.ray_executable!s}' start
@@ -267,13 +267,14 @@ class RayCluster(Closeable):
                 --verbose
                 --log-style pretty
                 --log-color false
-                --num-cpus={job_type.num_cpus}
-                --num-gpus={job_type.num_gpus}
+                --num-cpus={self.head_job_type.num_cpus}
+                --num-gpus={self.head_job_type.num_gpus}
                 --resources='{resources_json}'
                 --block
             """
         else:
             resources_json = json.dumps(dict(node=0))
+            self.head_job_type = None
 
             cmd = f"""
             '{self.ray_executable!s}' start
@@ -412,6 +413,28 @@ class RayCluster(Closeable):
 
         worker_info = WorkerInfo(slurm_job=job, worker_ports=worker_ports)
         self.workers[name].append(worker_info)
+
+    def resource_requested(self, name: str) -> float:
+        """Return the amount of resource requested for a given resource."""
+        ret = 0.0
+
+        for k, vs in self.workers.items():
+            if name == "num_cpus":
+                ret += KNWON_JOB_TYPES[k].num_cpus * len(vs)
+            elif name == "num_gpus":
+                ret += KNWON_JOB_TYPES[k].num_gpus * len(vs)
+            else:
+                ret += KNWON_JOB_TYPES[k].resources.get(name, 0) * len(vs)
+
+        if self.head_job_type is not None:
+            if name == "num_cpus":
+                ret += self.head_job_type.num_cpus
+            elif name == "num_gpus":
+                ret += self.head_job_type.num_gpus
+            else:
+                ret += self.head_job_type.resources.get(name, 0)
+
+        return ret
 
     def scale_workers(self, worker_type_name: str, num_workers: int):
         """Ensure given number of HPC workers are running."""
