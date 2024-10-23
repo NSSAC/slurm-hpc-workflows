@@ -164,6 +164,7 @@ class RayCluster(Closeable):
         ray_executable: Path | str | None = None,
         setup_script: Path | str | None = None,
         head_job_type: str | None = None,
+        python_paths: list[str] | None = None,
         verbose: bool = False,
     ):
         """
@@ -180,6 +181,8 @@ class RayCluster(Closeable):
             setup_script: Setup script (bash) to be used for initializing jobs.
             head_job_type: If not None, defines the job type of the head node.
                 If None the head node is not used for Ray tasks.
+            python_paths: If not None, they are appended to PYTHONPATH
+                enviroment variable of the workers.
             verbose: Show verbose output.
         """
         user = os.environ["USER"]
@@ -239,6 +242,14 @@ class RayCluster(Closeable):
         #     port=grafana_port,
         #     verbose=verbose,
         # )
+
+        cluster_python_path = []
+        if "PYTHONPATH" in os.environ:
+            cluster_python_path.extend(os.environ["PYTHONPATH"].split(":"))
+        if python_paths is not None:
+            cluster_python_path.extend(python_paths)
+        cluster_python_path = ":".join(cluster_python_path)
+        self.cluster_python_path = cluster_python_path
 
         my_pid = str(os.getpid())
         plasma_store_socket_name = self.temp_dir / f"plasma-store-socket-{my_pid}.sock"
@@ -308,6 +319,7 @@ class RayCluster(Closeable):
         # env["RAY_PROMETHEUS_HOST"] = self.prometheus.web_url
         # env["RAY_GRAFANA_HOST"] = self.grafana.dashboard_url
         env["RAY_scheduler_spread_threshold"] = "0.0"
+        env["PYTHONPATH"] = self.cluster_python_path
 
         self._head_proc: subprocess.Popen | None
         with open(self.work_dir / "head.log", "at") as fobj:
@@ -372,6 +384,7 @@ class RayCluster(Closeable):
         trap exit_trap EXIT
 
         export RAY_scheduler_spread_threshold=0.0
+        export PYTHONPATH='{self.cluster_python_path}'
 
         # Use ib0 ip for ray
         NODE_IP=$( ip addr show dev ib0 | awk '/inet/ {{print $2}}' | cut -d / -f 1 | head -n 1 )
