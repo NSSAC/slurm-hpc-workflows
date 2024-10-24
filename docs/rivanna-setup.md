@@ -108,8 +108,6 @@ export CMAKE_BUILD_TYPE=Release
 
 export _GLIBCXX_USE_CXX11_ABI=1
 
-export PYTHONPATH="$HOME/py-modules"
-
 export HDF5_USE_FILE_LOCKING=FALSE
 export CFLAGS="-march=x86-64 -mavx -mavx2 -mfma"
 export CXXFLAGS="-march=x86-64 -mavx -mavx2 -mfma"
