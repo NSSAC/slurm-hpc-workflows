@@ -70,7 +70,7 @@ def cancel_jobs(scancel_exe: str, job_ids: list[int], timeout: int):
     if not job_ids:
         return
 
-    cmd = [scancel_exe] + [str(id) for id in job_ids]
+    cmd = [scancel_exe, "--signal=TERM"] + [str(id) for id in job_ids]
     subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=timeout)
 
 
