@@ -65,12 +65,27 @@ def get_running_jobids(squeue_exe: str, slurm_user: str, timeout: int) -> set[in
     return job_ids
 
 
-def cancel_jobs(scancel_exe: str, job_ids: list[int], timeout: int):
+def cancel_jobs(
+    scancel_exe: str,
+    job_ids: list[int],
+    timeout: int,
+    term: bool = False,
+    batch: bool = False,
+    full: bool = False,
+):
     """Run scancel command for the given job ids."""
     if not job_ids:
         return
 
-    cmd = [scancel_exe, "--signal=TERM"] + [str(id) for id in job_ids]
+    cmd = [scancel_exe]
+    if term:
+        cmd.append("--signal=TERM")
+    if batch:
+        cmd.append("--batch")
+    if full:
+        cmd.append("--full")
+    cmd.extend([str(id) for id in job_ids])
+
     subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=timeout)
 
 
@@ -294,9 +309,18 @@ class SlurmJobManager(Closeable):
                     yield job
             running_jobs = [job for job in running_jobs if job.is_running]
 
-    def cancel(self, job: SlurmJob) -> None:
+    def cancel(
+        self, job: SlurmJob, term: bool = False, batch: bool = False, full: bool = False
+    ) -> None:
         """Stop a given job."""
-        cancel_jobs(self.scancel_exe, [job.job_id], self.command_timeout)
+        cancel_jobs(
+            self.scancel_exe,
+            [job.job_id],
+            self.command_timeout,
+            term=term,
+            batch=batch,
+            full=full,
+        )
 
     def close(self):
         """Shutdown all running jobs."""

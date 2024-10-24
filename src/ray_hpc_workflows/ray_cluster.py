@@ -205,7 +205,7 @@ class RayCluster(Closeable):
         work_dir.mkdir(parents=True, exist_ok=True)
 
         if sjm is None:
-            sjm = SlurmJobManager(work_dir / "sjm")
+            sjm = SlurmJobManager(work_dir / "sjm", cancel_on_close=False)
 
         self.sjm = sjm
         self.account = account
@@ -391,7 +391,14 @@ class RayCluster(Closeable):
         }}
 
         trap exit_trap EXIT
-        trap '' SIGTERM
+
+        term_trap() {{
+            echo "Stopping ray."
+
+            '{self.ray_executable!s}' stop
+        }}
+
+        trap term_trap SIGTERM
 
         export RAY_scheduler_spread_threshold=0.0
         export PYTHONPATH='{self.cluster_python_path}'
@@ -484,7 +491,7 @@ class RayCluster(Closeable):
             worker_info = self.workers[worker_type_name].pop()
 
             print(f"Stopping worker {worker_info.slurm_job.name} ...")
-            self.sjm.cancel(worker_info.slurm_job)
+            self.sjm.cancel(worker_info.slurm_job, term=True, full=True)
 
             # Release the ports
             self.used_worker_ports -= worker_info.worker_ports
