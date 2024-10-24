@@ -381,12 +381,17 @@ class RayCluster(Closeable):
         mkdir -p '{self.plasma_dir!s}'
 
         exit_trap () {{
-            echo "Exiting."
+            echo "Saving logs."
+            mkdir -p '{self.work_dir!s}/ray-logs/{worker_name}'
+            rsync -av '{self.temp_dir!s}/session_latest/logs/' '{self.work_dir!s}/ray-logs/{worker_name}/'
+
+            echo "Removing temp diectories."
             rm -rf '{self.temp_dir!s}'
             rm -rf '{self.plasma_dir!s}'
         }}
 
         trap exit_trap EXIT
+        trap '' SIGTERM
 
         export RAY_scheduler_spread_threshold=0.0
         export PYTHONPATH='{self.cluster_python_path}'
@@ -504,4 +509,16 @@ class RayCluster(Closeable):
             shutil.rmtree(self.plasma_dir)
 
         if self.temp_dir.exists():
+            print("Saving head logs ...")
+            log_dir = self.work_dir / "ray-logs" / "head"
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [
+                "rsync",
+                "-av",
+                f"{self.temp_dir!s}/session_latest/logs/",
+                f"{log_dir!s}/",
+            ]
+            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL)
+
             shutil.rmtree(self.temp_dir)
