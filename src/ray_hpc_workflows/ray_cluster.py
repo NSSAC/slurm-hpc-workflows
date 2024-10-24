@@ -165,6 +165,7 @@ class RayCluster(Closeable):
         setup_script: Path | str | None = None,
         head_job_type: str | None = None,
         python_paths: list[str] | None = None,
+        add_cwd_to_python_paths: bool = True,
         verbose: bool = False,
     ):
         """
@@ -183,6 +184,8 @@ class RayCluster(Closeable):
                 If None the head node is not used for Ray tasks.
             python_paths: If not None, they are appended to PYTHONPATH
                 enviroment variable of the workers.
+            add_cwd_to_python_paths: If True, add current working directory to
+                PYTHONPATH enviroment variable of the workers.
             verbose: Show verbose output.
         """
         user = os.environ["USER"]
@@ -248,6 +251,8 @@ class RayCluster(Closeable):
             cluster_python_path.extend(os.environ["PYTHONPATH"].split(":"))
         if python_paths is not None:
             cluster_python_path.extend(python_paths)
+        if add_cwd_to_python_paths:
+            cluster_python_path.append(str(Path.cwd()))
         cluster_python_path = ":".join(cluster_python_path)
         self.cluster_python_path = cluster_python_path
 
