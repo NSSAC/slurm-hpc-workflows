@@ -79,8 +79,7 @@ def _ray_apply_chunk(func, args_list_chunk, extra_args):
         if extra_args is not None:
             args = list(args)
             args.extend(extra_args)
-        func(**args)
-    return True
+        func(*args)
 
 
 def ray_apply(
@@ -106,7 +105,4 @@ def ray_apply(
         task = task.remote(func, args_list_chunk, extra_args)
         tasks.append(task)
 
-    results = ray.get(tasks)
-    assert all(results), "Unexpected result."
-
-    return True
+    _ = ray.get(tasks)
