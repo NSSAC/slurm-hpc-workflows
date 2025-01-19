@@ -6,14 +6,6 @@ from typing import Callable
 from more_itertools import chunked
 
 import ray
-from ray.util.dask import ray_dask_get
-
-from dask import config as dask_config
-
-
-def setup_ray_on_dask():
-    dask_config.set(scheduler=ray_dask_get)
-
 
 def compute_chunksize(
     args_list: list[tuple],
