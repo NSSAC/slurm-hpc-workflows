@@ -5,14 +5,13 @@ import re
 import time
 import subprocess
 from pathlib import Path
-from typing import Generator
+from typing import Iterator
 from datetime import datetime
+from dataclasses import dataclass
 
-import jinja2
 import platformdirs
-from pydantic import BaseModel
 
-from .utils import Closeable, find_sbatch
+from .utils import Closeable, JINJA_ENV, find_sbatch
 
 COMMAND_TIMEOUT = 120
 
@@ -20,14 +19,29 @@ SBATCH_OUTPUT_REGEX = re.compile(r"Submitted batch job (?P<id>\S*)")
 
 SQUEUE_CHECK_INTERVAL = 5  # seconds
 
-ENVIRONMENT = jinja2.Environment(
-    undefined=jinja2.StrictUndefined,
-    trim_blocks=True,
-    lstrip_blocks=True,
-)
+SCRIPT_TEMPLATE_TEXT = r"""
+#!/bin/bash
+#SBATCH --job-name "{{ name }}"
+{% for sbatch_arg in sbatch_args %}
+#SBATCH {{ sbatch_arg }}
+{% endfor %}
+#SBATCH --output "{{ output_file }}"
+
+{{ script }}
+"""
+
+SCRIPT_TEMPLATE = JINJA_ENV.from_string(SCRIPT_TEMPLATE_TEXT.strip())
+
+SLURM_USER = os.environ["USER"]
+
+CLEAN_ENVIRON: dict
+
+SBATCH_EXE: str
+SQUEUE_EXE: str
+SCANCEL_EXE: str
 
 
-def get_clean_environ() -> dict[str, str]:
+def _get_clean_environ() -> dict[str, str]:
     """Create environment dict without SLURM set variables.
 
     This is an issue when submitting Slurm jobs from within Slurm jobs.
@@ -46,19 +60,52 @@ def get_clean_environ() -> dict[str, str]:
     return sanitized_env
 
 
-CLEAN_ENVIRON = get_clean_environ()
+def _init_globals():
+    global CLEAN_ENVIRON
+    global SBATCH_EXE, SQUEUE_EXE, SCANCEL_EXE
+
+    CLEAN_ENVIRON = _get_clean_environ()
+
+    sbatch_exe = find_sbatch(None)
+    SBATCH_EXE = str(sbatch_exe)
+    SQUEUE_EXE = str(sbatch_exe.parent / "squeue")
+    SCANCEL_EXE = str(sbatch_exe.parent / "scancel")
 
 
-def get_running_jobids(squeue_exe: str, slurm_user: str, timeout: int) -> set[int]:
+_init_globals()
+
+
+def set_sbatch_exe_path(sbatch_exe: Path | str):
+    global SBATCH_EXE, SQUEUE_EXE, SCANCEL_EXE
+
+    sbatch_exe = find_sbatch(sbatch_exe)
+    SBATCH_EXE = str(sbatch_exe)
+    SQUEUE_EXE = str(sbatch_exe.parent / "squeue")
+    SCANCEL_EXE = str(sbatch_exe.parent / "scancel")
+
+
+def set_slurm_user(slurm_user: str):
+    global SLURM_USER
+
+    SLURM_USER = slurm_user
+
+
+def set_command_timeout(timeout: int):
+    global COMMAND_TIMEOUT
+
+    COMMAND_TIMEOUT = timeout
+
+
+def get_running_jobids() -> set[int]:
     """Get the running Slurm job IDs for the given Slurm user."""
-    cmd = [squeue_exe, "-u", slurm_user, "--noheader", "-o", "%A"]
+    cmd = [SQUEUE_EXE, "-u", SLURM_USER, "--noheader", "-o", "%A"]
 
     proc = subprocess.run(
         cmd,
         capture_output=True,
         check=True,
         text=True,
-        timeout=timeout,
+        timeout=COMMAND_TIMEOUT,
     )
     job_ids = proc.stdout.strip().split()
     job_ids = set(int(j) for j in job_ids)
@@ -66,9 +113,7 @@ def get_running_jobids(squeue_exe: str, slurm_user: str, timeout: int) -> set[in
 
 
 def cancel_jobs(
-    scancel_exe: str,
     job_ids: list[int],
-    timeout: int,
     term: bool = False,
     batch: bool = False,
     full: bool = False,
@@ -77,7 +122,7 @@ def cancel_jobs(
     if not job_ids:
         return
 
-    cmd = [scancel_exe]
+    cmd = [SCANCEL_EXE]
     if term:
         cmd.append("--signal=TERM")
     if batch:
@@ -86,10 +131,13 @@ def cancel_jobs(
         cmd.append("--full")
     cmd.extend([str(id) for id in job_ids])
 
-    subprocess.run(cmd, capture_output=True, check=True, text=True, timeout=timeout)
+    subprocess.run(
+        cmd, capture_output=True, check=True, text=True, timeout=COMMAND_TIMEOUT
+    )
 
 
-class SlurmJob(BaseModel):
+@dataclass
+class SlurmJob:
     """A submitted Slurm job."""
 
     name: str
@@ -101,26 +149,11 @@ class SlurmJob(BaseModel):
     output_file: Path
 
 
-SCRIPT_TEMPLATE_TEXT = r"""
-#!/bin/bash
-#SBATCH --job-name "{{ name }}"
-{% for sbatch_arg in sbatch_args %}
-#SBATCH {{ sbatch_arg }}
-{% endfor %}
-#SBATCH --output "{{ output_file }}"
-
-{{ script }}
-"""
-SCRIPT_TEMPLATE = ENVIRONMENT.from_string(SCRIPT_TEMPLATE_TEXT.strip())
-
-
 def submit_sbatch_job(
-    sbatch_exe: str,
     name: str,
     sbatch_args: list[str],
     script: str,
     work_dir: Path,
-    timeout: int,
 ) -> SlurmJob:
     """Submit a sbatch job."""
     # Figure out the output and error file names.
@@ -139,11 +172,11 @@ def submit_sbatch_job(
 
     # Run sbatch
     proc = subprocess.run(
-        [sbatch_exe, str(script_path)],
+        [SBATCH_EXE, str(script_path)],
         check=True,
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=COMMAND_TIMEOUT,
         env=CLEAN_ENVIRON,
     )
 
@@ -173,24 +206,12 @@ class SlurmJobManager(Closeable):
     def __init__(
         self,
         work_dir: Path | str | None = None,
-        sbatch_exe: Path | str | None = None,
-        slurm_user: str | None = None,
-        command_timeout: int = COMMAND_TIMEOUT,
         cancel_on_close: bool = True,
     ):
         """Initialize.
 
         Args:
             work_dir: Path where log files and scripts will be created.
-            sbatch_exe: Path to sbatch executable.
-                If None, will lookup location in PATH.
-            slurm_user: Username of the Slurm user.
-                If None, will use USER environment variable.
-            command_timeout: Timeout for executing commands.
-            preserve_env: Enviroment variables to preseve in slurm jobs environment.
-                Enviroment varimables not specified will be removed.
-                This is necessary so that Slurm generated variables from parent job
-                do not conflict with Slurm generated variables in the child job.
             cancel_on_close: If True (default) kill all running jobs on exit.
         """
         if work_dir is None:
@@ -199,22 +220,9 @@ class SlurmJobManager(Closeable):
 
         work_dir = Path(work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
-
-        sbatch_exe = find_sbatch(sbatch_exe)
-        self.sbatch_exe = str(sbatch_exe)
-        self.squeue_exe = str(sbatch_exe.parent / "squeue")
-        self.scancel_exe = str(sbatch_exe.parent / "scancel")
-
-        if slurm_user is None:
-            slurm_user = os.environ["USER"]
-        self.slurm_user = slurm_user
-
-        self.command_timeout = command_timeout
-        self.cancel_on_close = cancel_on_close
-
         self.work_dir = work_dir
-        if not self.work_dir.exists():
-            work_dir.mkdir(parents=True, exist_ok=True)
+
+        self.cancel_on_close = cancel_on_close
 
         # job name -> type
         self.jobs: dict[str, SlurmJob] = {}
@@ -222,9 +230,7 @@ class SlurmJobManager(Closeable):
         # job_id -> type (only for running jobs)
         self.running_jobs: dict[int, SlurmJob] = {}
 
-        self.running_job_ids: set[int] = get_running_jobids(
-            self.squeue_exe, self.slurm_user, self.command_timeout
-        )
+        self.running_job_ids: set[int] = get_running_jobids()
         self.last_check = datetime.now()
 
     def submit(self, name: str, sbatch_args: list[str], script: str) -> SlurmJob:
@@ -240,12 +246,10 @@ class SlurmJobManager(Closeable):
             raise ValueError(f"Job '{name}' is already defined.")
 
         job = submit_sbatch_job(
-            sbatch_exe=self.sbatch_exe,
             name=name,
             sbatch_args=sbatch_args,
             script=script,
             work_dir=self.work_dir,
-            timeout=self.command_timeout,
         )
 
         self.jobs[name] = job
@@ -260,9 +264,7 @@ class SlurmJobManager(Closeable):
             time.sleep(sleep_time)
 
     def _update_running_jobs(self):
-        self.running_job_ids = get_running_jobids(
-            self.squeue_exe, self.slurm_user, self.command_timeout
-        )
+        self.running_job_ids = get_running_jobids()
         self.last_check = datetime.now()
 
         for job_id in list(self.running_jobs):
@@ -288,9 +290,7 @@ class SlurmJobManager(Closeable):
 
             running_jobs = [job for job in running_jobs if job.is_running]
 
-    def as_completed(
-        self, jobs: list[SlurmJob] | None = None
-    ) -> Generator[SlurmJob, None, None]:
+    def as_completed(self, jobs: list[SlurmJob] | None = None) -> Iterator[SlurmJob]:
         """Yield jobs as they are completed."""
         if jobs is None:
             jobs = list(self.running_jobs.values())
@@ -314,9 +314,7 @@ class SlurmJobManager(Closeable):
     ) -> None:
         """Stop a given job."""
         cancel_jobs(
-            self.scancel_exe,
             [job.job_id],
-            self.command_timeout,
             term=term,
             batch=batch,
             full=full,
@@ -332,4 +330,4 @@ class SlurmJobManager(Closeable):
                 if job.is_running:
                     running_job_ids.append(job.job_id)
 
-            cancel_jobs(self.scancel_exe, running_job_ids, self.command_timeout)
+            cancel_jobs(running_job_ids)

@@ -1,5 +1,7 @@
 """Common utilities."""
 
+from __future__ import annotations
+
 import os
 import signal
 import shutil
@@ -11,7 +13,14 @@ from functools import partial
 from abc import ABC, abstractmethod
 from contextlib import closing, contextmanager
 
+import jinja2
 import netifaces
+
+JINJA_ENV = jinja2.Environment(
+    undefined=jinja2.StrictUndefined,
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
 
 
 def _find_executable(name: str, path: Path | str | None = None) -> Path:

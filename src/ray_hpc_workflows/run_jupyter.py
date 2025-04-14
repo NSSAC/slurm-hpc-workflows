@@ -2,76 +2,54 @@
 
 import subprocess
 from pathlib import Path
-from textwrap import dedent
 
 import click
 
 from .utils import find_jupyter, find_setup_script
 from .slurm_job_manager import SlurmJobManager
-from .ray_cluster import KNWON_JOB_TYPES
+
+SCRIPT_TEMPLATE = r"""
+. "/etc/profile"
+. '{setup_script}'
+
+HOST="$(hostname)"
+PORT=8888
+
+echo "Jupyter url: http://$HOST:$PORT"
+
+set -Eeuo pipefail
+set -x
+
+exec '{jupyter_executable}' lab \
+    --ip "$HOST" --port "$PORT" \
+    --ServerApp.disable_check_xsrf=True \
+    --notebook-dir="$HOME" \
+    --no-browser
+"""
 
 
 @click.command()
-@click.option(
-    "--type",
-    required=True,
-    type=click.Choice(list(KNWON_JOB_TYPES)),
-    help="Type of allocation for job.",
-)
-@click.option("--account", required=True, type=str, help="Account to be used.")
-@click.option(
-    "--runtime-h", type=int, default=16, show_default=True, help="Job runtime in hours."
-)
-@click.option("--qos", type=str, help="QOS to use.")
-@click.option("--reservation", type=str, help="Reservation to use.")
 @click.option(
     "--setup-script",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     help="Path to setup script.",
 )
+@click.argument("sbatch-args", nargs=-1)
 def run_jupyter(
-    type: str,
-    account: str,
-    runtime_h: int,
-    qos: str | None,
-    reservation: str | None,
+    sbatch_args: list[str],
     setup_script: Path | None,
 ):
     """Start a Jupyter Lab instance."""
-    name = "jupyter"
+    print("Sbatch args: ", " ".join(sbatch_args))
 
-    sbatch_args = KNWON_JOB_TYPES[type].sbatch_args
-    sbatch_args.append(f"--account {account}")
-    sbatch_args.append(f"--time {runtime_h}:00:00")
-    if qos:
-        sbatch_args.append(f"--qos {qos}")
-    if reservation:
-        sbatch_args.append(f"--reservation {reservation}")
+    name = "jupyter"
 
     jupyter_executable = find_jupyter()
     setup_script = find_setup_script(setup_script)
 
-    script = rf"""
-    . "/etc/profile"
-    . '{setup_script!s}'
-
-    export RAY_SCHEDULER_EVENTS=0
-
-    HOST="$(hostname)"
-    PORT=8888
-
-    echo "Jupyter url: http://$HOST:$PORT"
-
-    set -Eeuo pipefail
-    set -x
-
-    exec '{jupyter_executable!s}' lab \
-        --ip "$HOST" --port "$PORT" \
-        --ServerApp.disable_check_xsrf=True \
-        --notebook-dir="$HOME" \
-        --no-browser
-    """
-    script = dedent(script)
+    script = SCRIPT_TEMPLATE.format(
+        setup_script=setup_script, jupyter_executable=jupyter_executable
+    )
 
     sjm = SlurmJobManager(cancel_on_close=False)
     try:
