@@ -1,0 +1,26 @@
+{#- name: "head_command" -#}
+
+'{{ ray_executable }}' start
+    --head
+    --node-ip-address='{{ host }}'
+    --node-name='head'
+    --port={{ port }}
+    --include-dashboard=true
+    --dashboard-host=''
+    --dashboard-port={{ dashboard_port }}
+    --plasma-directory='{{ plasma_dir }}'
+    --temp-dir='{{ temp_dir }}'
+    --disable-usage-stats
+    --verbose
+    --log-style pretty
+    --log-color false
+    {% if num_cpus is not none %}
+    --num-cpus={{ num_cpus }}
+    {% endif %}
+    {% if num_gpus is not none %}
+    --num-gpus={{ num_gpus }}
+    {% endif %}
+    {% if resources is not none %}
+    --resources='{{ resources | json }}'
+    {% endif %}
+    --block
