@@ -1,0 +1,10 @@
+{#- name: script_template -#}
+
+#!/bin/bash
+#SBATCH --job-name "{{ name }}"
+{% for sbatch_arg in sbatch_args %}
+#SBATCH {{ sbatch_arg }}
+{% endfor %}
+#SBATCH --output "{{ output_file }}"
+
+{{ script }}

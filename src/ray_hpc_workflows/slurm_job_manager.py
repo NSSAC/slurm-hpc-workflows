@@ -11,26 +11,14 @@ from dataclasses import dataclass
 
 import platformdirs
 
-from .utils import Closeable, JINJA_ENV, find_sbatch
+from .utils import Closeable, find_sbatch
+from .templates import render_template
 
 COMMAND_TIMEOUT = 120
 
 SBATCH_OUTPUT_REGEX = re.compile(r"Submitted batch job (?P<id>\S*)")
 
 SQUEUE_CHECK_INTERVAL = 5  # seconds
-
-SCRIPT_TEMPLATE_TEXT = r"""
-#!/bin/bash
-#SBATCH --job-name "{{ name }}"
-{% for sbatch_arg in sbatch_args %}
-#SBATCH {{ sbatch_arg }}
-{% endfor %}
-#SBATCH --output "{{ output_file }}"
-
-{{ script }}
-"""
-
-SCRIPT_TEMPLATE = JINJA_ENV.from_string(SCRIPT_TEMPLATE_TEXT.strip())
 
 SLURM_USER = os.environ["USER"]
 
@@ -161,7 +149,8 @@ def submit_sbatch_job(
 
     # Create the sbatch script
     script_path = work_dir / f"{name}.sh"
-    script_text = SCRIPT_TEMPLATE.render(
+    script_text = render_template(
+        "slurm_job_manager:script_template",
         name=name,
         sbatch_args=sbatch_args,
         script=script,

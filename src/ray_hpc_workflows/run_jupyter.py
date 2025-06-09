@@ -6,26 +6,8 @@ from pathlib import Path
 import click
 
 from .utils import find_jupyter, find_setup_script
+from .templates import render_template
 from .slurm_job_manager import SlurmJobManager
-
-SCRIPT_TEMPLATE = r"""
-. "/etc/profile"
-. '{setup_script}'
-
-HOST="$(hostname)"
-PORT=8888
-
-echo "Jupyter url: http://$HOST:$PORT"
-
-set -Eeuo pipefail
-set -x
-
-exec '{jupyter_executable}' lab \
-    --ip "$HOST" --port "$PORT" \
-    --ServerApp.disable_check_xsrf=True \
-    --notebook-dir="$HOME" \
-    --no-browser
-"""
 
 
 @click.command()
@@ -47,8 +29,10 @@ def run_jupyter(
     jupyter_executable = find_jupyter()
     setup_script = find_setup_script(setup_script)
 
-    script = SCRIPT_TEMPLATE.format(
-        setup_script=setup_script, jupyter_executable=jupyter_executable
+    script = render_template(
+        "run_jupyter:script_template",
+        setup_script=setup_script,
+        jupyter_executable=jupyter_executable,
     )
 
     sjm = SlurmJobManager(cancel_on_close=False)
