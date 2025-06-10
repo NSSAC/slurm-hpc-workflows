@@ -5,11 +5,13 @@
     --node-ip-address='{{ host }}'
     --node-name='head'
     --port={{ port }}
+    --ray-client-server-port={{ client_server_port }}
     --include-dashboard=true
     --dashboard-host=''
     --dashboard-port={{ dashboard_port }}
     --plasma-directory='{{ plasma_dir }}'
     --temp-dir='{{ temp_dir }}'
+    --dashboard-agent-listen-port={{ dashboard_agent_listen_port }}
     --disable-usage-stats
     --verbose
     --log-style pretty
@@ -23,4 +25,55 @@
     {% if resources is not none %}
     --resources='{{ resources | json }}'
     {% endif %}
+    --block
+
+{#- name: "worker_script" -#}
+
+. '/etc/profile'
+. '{{ setup_script }}'
+
+set -Eeuo pipefail
+set -x
+
+mkdir -p '{{ temp_dir }}'
+mkdir -p '{{ plasma_dir }}'
+
+exit_trap () {
+    echo "Saving logs."
+    mkdir -p '{{ work_dir }}/ray-logs/{{ worker_name }}'
+    rsync -av '{{ temp_dir }}/session_latest/logs/' '{{ work_dir }}/ray-logs/{{ worker_name }}/'
+
+    echo "Removing temp diectories."
+    rm -rf '{{ temp_dir }}'
+    rm -rf '{{ plasma_dir }}'
+}
+
+trap exit_trap EXIT
+
+term_trap() {
+    echo "Stopping ray."
+
+    '{{ ray_executable }}' stop
+}
+
+trap term_trap SIGTERM
+
+export RAY_scheduler_spread_threshold=0.0
+export PYTHONPATH='{{ cluster_python_path }}'
+
+{% if use_srun %}srun \{% endif %}
+'{{ ray_executable }}' start \
+    --node-name='{{ worker_name }}' \
+    --address='{{ worker_address }}' \
+    --num-cpus={{ num_cpus }} \
+    --num-gpus={{ num_gpus }} \
+    --resources='{{ resources | json }}' \
+    --plasma-directory='{{ plasma_dir }}' \
+    --plasma-store-socket-name='{{ temp_dir }}'/plasma-store-socket.sock \
+    --raylet-socket-name='{{ temp_dir }}'/raylet-socket.sock \
+    --dashboard-agent-listen-port={{ dashboard_agent_listen_port }} \
+    --disable-usage-stats \
+    --verbose \
+    --log-style pretty \
+    --log-color false \
     --block
