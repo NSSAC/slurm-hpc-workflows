@@ -61,13 +61,18 @@ trap term_trap SIGTERM
 export RAY_scheduler_spread_threshold=0.0
 export PYTHONPATH='{{ cluster_python_path }}'
 
-{% if use_srun %}srun \{% endif %}
 '{{ ray_executable }}' start \
     --node-name='{{ worker_name }}' \
-    --address='{{ worker_address }}' \
+    --address='{{ address }}' \
+    {% if num_cpus is not none %}
     --num-cpus={{ num_cpus }} \
+    {% endif %}
+    {% if num_gpus is not none %}
     --num-gpus={{ num_gpus }} \
+    {% endif %}
+    {% if resources is not none %}
     --resources='{{ resources | json }}' \
+    {% endif %}
     --plasma-directory='{{ plasma_dir }}' \
     --plasma-store-socket-name='{{ temp_dir }}'/plasma-store-socket.sock \
     --raylet-socket-name='{{ temp_dir }}'/raylet-socket.sock \

@@ -29,32 +29,29 @@ from .templates import render_template
 @dataclass
 class WorkerConfig:
     sbatch_args: list[str]
-    num_cpus: int
-    num_gpus: int
-    resources: dict[str, int]
-    use_srun: bool
-    num_nodes: int
+    num_cpus: int | None
+    num_gpus: int | None
+    resources: dict[str, int] | None
 
 
-_KNOWN_WORKER: dict[str, WorkerConfig]
+_KNOWN_WORKER: dict[str, WorkerConfig] = {}
 
 
 def define_worker_config(
     name: str,
-    sbatch_args: list[str],
-    num_cpus: int,
-    num_gpus: int,
-    resources: dict[str, int],
-    use_srun: bool = False,
-    num_nodes: int = 1,
+    sbatch_args: list[str] | str,
+    num_cpus: int | None = None,
+    num_gpus: int | None = None,
+    resources: dict[str, int] | None = None,
 ):
     """Define a new worker config."""
     if name is _KNOWN_WORKER:
         raise RuntimeError(f"Worker config for '{name}' is aleady defined")
 
-    _KNOWN_WORKER[name] = WorkerConfig(
-        sbatch_args, num_cpus, num_gpus, resources, use_srun, num_nodes
-    )
+    if isinstance(sbatch_args, str):
+        sbatch_args = [sbatch_args]
+
+    _KNOWN_WORKER[name] = WorkerConfig(sbatch_args, num_cpus, num_gpus, resources)
 
 
 class RayCluster(Closeable):
@@ -167,7 +164,6 @@ class RayCluster(Closeable):
 
         worker_script = render_template(
             "ray_cluster:worker_script",
-            use_srun=worker_config.use_srun,
             worker_name=worker_name,
             address=self.head_address,
             work_dir=self.work_dir,
