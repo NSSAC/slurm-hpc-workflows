@@ -32,6 +32,7 @@ class WorkerConfig:
     num_cpus: int | None
     num_gpus: int | None
     resources: dict[str, int] | None
+    use_srun: bool
 
 
 _KNOWN_WORKER: dict[str, WorkerConfig] = {}
@@ -43,6 +44,7 @@ def define_worker_config(
     num_cpus: int | None = None,
     num_gpus: int | None = None,
     resources: dict[str, int] | None = None,
+    use_srun: bool = True,
 ):
     """Define a new worker config."""
     if name is _KNOWN_WORKER:
@@ -51,7 +53,9 @@ def define_worker_config(
     if isinstance(sbatch_args, str):
         sbatch_args = [sbatch_args]
 
-    _KNOWN_WORKER[name] = WorkerConfig(sbatch_args, num_cpus, num_gpus, resources)
+    _KNOWN_WORKER[name] = WorkerConfig(
+        sbatch_args, num_cpus, num_gpus, resources, use_srun
+    )
 
 
 class RayCluster(Closeable):
@@ -94,10 +98,20 @@ class RayCluster(Closeable):
         self.dashboard_agent_listen_port = arbitrary_free_port("")
 
         self.plasma_dir = Path("/dev/shm") / user / f"ray_plasma_dir"
+        if self.plasma_dir.exists():
+            shutil.rmtree(self.plasma_dir)
         self.plasma_dir.mkdir(parents=True, exist_ok=True)
 
         self.temp_dir = Path("/tmp") / user / "ray_temp_dir"
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        if self.temp_dir.exists():
+            if self.temp_dir.is_symlink():
+                self.temp_dir.unlink()
+            elif self.temp_dir.is_dir():
+                shutil.rmtree(self.temp_dir)
+
+        head_temp_dir = self.work_dir / "temp_dir" / "head"
+        head_temp_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.symlink_to(head_temp_dir, target_is_directory=True)
 
         cluster_python_path = []
         if add_cwd_to_python_paths:
@@ -177,9 +191,20 @@ class RayCluster(Closeable):
             ray_executable=self.ray_executable,
             cluster_python_path=self.cluster_python_path,
         )
+        worker_script_path = self.work_dir / f"{worker_name}.sh"
+        worker_script_path.write_text(worker_script)
+        worker_script_path.chmod(0o755)
+
+        worker_sbatch_script = render_template(
+            "ray_cluster:worker_sbatch_script",
+            use_srun=worker_config.use_srun,
+            worker_script_path=worker_script_path,
+        )
 
         print(f"Starting worker {worker_name} ...")
-        job = self.sjm.submit(worker_name, worker_config.sbatch_args, worker_script)
+        job = self.sjm.submit(
+            worker_name, worker_config.sbatch_args, worker_sbatch_script
+        )
         self.workers[name].append(job)
 
     def scale_workers(self, worker_type_name: str, num_workers: int):
@@ -200,7 +225,10 @@ class RayCluster(Closeable):
         print("Closing ray cluster.")
 
         for worker_type_name in _KNOWN_WORKER:
-            self.scale_workers(worker_type_name, 0)
+            try:
+                self.scale_workers(worker_type_name, 0)
+            except Exception as e:
+                print(f"Failed to stop '{worker_type_name}' workers: {e}")
 
         if self._head_proc is not None:
             terminate_gracefully(self._head_proc, proc_name="Ray head process")
@@ -210,16 +238,4 @@ class RayCluster(Closeable):
             shutil.rmtree(self.plasma_dir)
 
         if self.temp_dir.exists():
-            print("Saving head logs ...")
-            log_dir = self.work_dir / "ray-logs" / "head"
-            log_dir.mkdir(parents=True, exist_ok=True)
-
-            cmd = [
-                "rsync",
-                "-av",
-                f"{self.temp_dir}/session_latest/logs/",
-                f"{log_dir}/",
-            ]
-            subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL)
-
-            shutil.rmtree(self.temp_dir)
+            self.temp_dir.unlink()

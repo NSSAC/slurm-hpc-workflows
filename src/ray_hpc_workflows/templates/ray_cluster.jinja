@@ -3,7 +3,6 @@
 '{{ ray_executable }}' start
     --head
     --node-ip-address='{{ host }}'
-    --node-name='head'
     --port={{ port }}
     --ray-client-server-port={{ client_server_port }}
     --include-dashboard=true
@@ -27,7 +26,17 @@
     {% endif %}
     --block
 
+{#- name: "worker_sbatch_script" -#}
+
+{% if use_srun %}
+srun /bin/bash '{{ worker_script_path }}'
+{% else %}
+. '{{ worker_script_path }}'
+{% endif %}
+
 {#- name: "worker_script" -#}
+
+#!/bin/bash
 
 . '/etc/profile'
 . '{{ setup_script }}'
@@ -35,34 +44,34 @@
 set -Eeuo pipefail
 set -x
 
-mkdir -p '{{ temp_dir }}'
+echo "Starting worker on $(hostname)"
+
+if [[ -h '{{ temp_dir }}' ]]; then
+    rm -f '{{ temp_dir }}'
+elif [[ -d '{{ temp_dir }}' ]]; then
+    rm -rf '{{ temp_dir }}'
+fi
+mkdir -p '{{ work_dir }}/temp_dir/{{ worker_name }}'
+ln -s '{{ temp_dir }}' '{{ work_dir }}/temp_dir/{{ worker_name }}'
+
+rm -rf '{{ plasma_dir }}'
 mkdir -p '{{ plasma_dir }}'
 
 exit_trap () {
-    echo "Saving logs."
-    mkdir -p '{{ work_dir }}/ray-logs/{{ worker_name }}'
-    rsync -av '{{ temp_dir }}/session_latest/logs/' '{{ work_dir }}/ray-logs/{{ worker_name }}/'
-
-    echo "Removing temp diectories."
-    rm -rf '{{ temp_dir }}'
-    rm -rf '{{ plasma_dir }}'
-}
-
-trap exit_trap EXIT
-
-term_trap() {
     echo "Stopping ray."
 
     '{{ ray_executable }}' stop
+
+    rm -f '{{ temp_dir }}'
+    rm -rf '{{ plasma_dir }}'
 }
 
-trap term_trap SIGTERM
+trap exit_trap EXIT TERM
 
 export RAY_scheduler_spread_threshold=0.0
 export PYTHONPATH='{{ cluster_python_path }}'
 
 '{{ ray_executable }}' start \
-    --node-name='{{ worker_name }}' \
     --address='{{ address }}' \
     {% if num_cpus is not none %}
     --num-cpus={{ num_cpus }} \
@@ -74,8 +83,6 @@ export PYTHONPATH='{{ cluster_python_path }}'
     --resources='{{ resources | json }}' \
     {% endif %}
     --plasma-directory='{{ plasma_dir }}' \
-    --plasma-store-socket-name='{{ temp_dir }}'/plasma-store-socket.sock \
-    --raylet-socket-name='{{ temp_dir }}'/raylet-socket.sock \
     --dashboard-agent-listen-port={{ dashboard_agent_listen_port }} \
     --disable-usage-stats \
     --verbose \
