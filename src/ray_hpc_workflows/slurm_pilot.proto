@@ -1,0 +1,42 @@
+edition = "2023";
+
+service Coordinator {
+  rpc RegisterWorkerProcess(WorkerProcessID) returns (Empty) {}
+  rpc UnregisterWorkerProcess(WorkerProcessID) returns (Empty) {}
+
+  rpc GetNextTask(WorkerProcessID) returns (TaskAssignment) {}
+  rpc SetTaskResult(TaskResult) returns (Empty) {}
+}
+
+message Empty {}
+
+message WorkerProcessID {
+  string type = 1;
+  string name = 2;
+  int64 slurm_job_id = 3;
+  string hostname = 4;
+  int64 pid = 5;
+}
+
+message TaskDefn {
+  string task_id = 1;
+  bytes function = 2;
+  bytes args = 3;
+  bytes kwargs = 4;
+  string type = 5;
+}
+
+message TaskAssignment {
+  bool exit_flag = 1;
+  bool task_available = 2;
+  TaskDefn task = 3;
+}
+
+message TaskResult {
+  string task_id = 1;
+  bool task_success = 2;
+  bytes return_ = 3;
+  string error = 4;
+  string error_id = 5;
+  WorkerProcessID process_id = 6;
+}

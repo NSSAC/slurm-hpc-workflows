@@ -29,7 +29,11 @@ dependencies = [
     "psycopg2-binary",
     "ray[default]",
     "more-itertools",
-    "dask[complete]"
+    "dask[complete]",
+    "grpcio",
+    "grpcio-tools",
+    "cloudpickle"
+
 ]
 
 [tool.setuptools.packages.find]
@@ -40,3 +44,4 @@ where = ["src"]
 
 [project.scripts]
 "run-jupyter" = "ray_hpc_workflows.run_jupyter:run_jupyter"
+"slurm-pilot-worker" = "ray_hpc_workflows.slurm_pilot:slurm_pilot_worker"
