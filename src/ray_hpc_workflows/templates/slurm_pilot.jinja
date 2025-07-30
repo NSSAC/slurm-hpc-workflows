@@ -20,6 +20,6 @@ echo "Starting worker on $(hostname)"
 
 slurm-pilot-worker \
     --type '{{ type }}' \
-    --job-id '{{ job_id }}' \
+    --name '{{ name }}' \
     --server-address '{{ server_address }}' \
     --work-dir '{{ work_dir }}'

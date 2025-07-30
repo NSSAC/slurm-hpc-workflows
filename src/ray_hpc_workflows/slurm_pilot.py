@@ -6,8 +6,9 @@ import json
 import pickle
 import socket
 import logging
+import random
+import string
 import threading
-from uuid import uuid4
 from datetime import datetime
 from dataclasses import dataclass, field
 from collections import deque
@@ -46,11 +47,29 @@ LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
 LOG_LEVEL = logging.INFO
 
 
+def gen_error_id() -> str:
+    return "ERROR_" + "".join(
+        random.choices(string.ascii_lowercase + string.digits, k=32)
+    )
+
+
+def gen_task_id(name: str) -> str:
+    return f"TASK_{name}_" + "".join(
+        random.choices(string.ascii_lowercase + string.digits, k=32)
+    )
+
+
 class PilotProcess:
-    def __init__(self, type: str, name: str, server_address: str, work_dir: Path):
-        slurm_job_id = int(os.environ.get("SLURM_JOB_ID", 0))
-        hostname = socket.gethostname()
-        pid = os.getpid()
+    def __init__(
+        self,
+        type: str,
+        name: str,
+        server_address: str,
+        work_dir: Path,
+        slurm_job_id: int,
+        hostname: str,
+        pid: int,
+    ):
         self._process_id = WorkerProcessID(
             type=type,
             name=name,
@@ -61,18 +80,17 @@ class PilotProcess:
 
         self._server_address = server_address
         self._work_dir = work_dir
-        self._exit_flag = False
-        self._logger = logging.getLogger("slurm_pilot.worker_process")
+        self._logger = logging.getLogger("worker_process")
 
-        service_config_json = json.dumps(
+        client_service_config = json.dumps(
             {
                 "methodConfig": [
                     {
                         "name": [{}],
                         "retryPolicy": {
                             "maxAttempts": 100,
-                            "initialBackoff": "0.1s",
-                            "maxBackoff": "5s",
+                            "initialBackoff": "1s",
+                            "maxBackoff": "15s",
                             "backoffMultiplier": 2,
                             "retryableStatusCodes": ["UNAVAILABLE"],
                         },
@@ -88,7 +106,7 @@ class PilotProcess:
             ("grpc.keepalive_permit_without_calls", 1),
             # Retry stuff
             ("grpc.enable_retries", 1),
-            ("grpc.service_config", service_config_json),
+            ("grpc.service_config", client_service_config),
         ]
 
         self._channel = grpc.insecure_channel(self._server_address, options=options)
@@ -119,7 +137,7 @@ class PilotProcess:
         try:
             function = cloudpickle.loads(task.function)
             args = cloudpickle.loads(task.args)
-            kwargs = cloudpickle.loads(task.args)
+            kwargs = cloudpickle.loads(task.kwargs)
 
             return_ = function(*args, **kwargs)
             return_ = cloudpickle.dumps(return_)
@@ -130,10 +148,8 @@ class PilotProcess:
                 process_id=self._process_id,
             )
         except Exception as e:
-            eid = str(uuid4())
-            self._logger.exception(
-                "Error executing task=%s: %s: %s", task.task_id, eid, e
-            )
+            eid = gen_error_id()
+            self._logger.exception("Error executing %s: %s: %s", task.task_id, eid, e)
             result = TaskResult(
                 task_id=task.task_id,
                 task_success=False,
@@ -160,6 +176,36 @@ class PilotProcess:
         finally:
             self.UnregisterWorkerProcess()
             self.close()
+
+
+@click.command()
+@click.option("--type", type=str, required=True, help="Worker type")
+@click.option("--name", type=str, required=True, help="Worker job ID")
+@click.option("--server-address", type=str, required=True, help="Pilot server address")
+@click.option(
+    "--work-dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Work directory",
+)
+def slurm_pilot_process(type: str, name: str, server_address: str, work_dir: Path):
+    """Start a slurm pilot worker."""
+    slurm_job_id = int(os.environ.get("SLURM_JOB_ID", -1))
+    hostname = socket.gethostname()
+    pid = os.getpid()
+    log_file = work_dir / f"{name}-{slurm_job_id}-{hostname}-{pid}.log"
+    logging.basicConfig(filename=log_file, format=LOG_FORMAT, level=LOG_LEVEL)
+
+    worker = PilotProcess(
+        type=type,
+        name=name,
+        server_address=server_address,
+        work_dir=work_dir,
+        slurm_job_id=slurm_job_id,
+        hostname=hostname,
+        pid=pid,
+    )
+    worker.main()
 
 
 @dataclass
@@ -211,13 +257,18 @@ class PilotCoordinator(CoordinatorServicer):
 
         if work_dir is None:
             now = datetime.now().isoformat()
-            work_dir = platformdirs.user_cache_path(
-                appname=f"slurm-pilot-work-dir-{now}"
-            )
+            work_dir = platformdirs.user_cache_path(appname=f"slurm-pilot") / now
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
         self._logger = logging.getLogger("pilot_coordinator")
+        self._logger.setLevel(LOG_LEVEL)
+        handler = logging.FileHandler(self.work_dir / "coordinator.log", delay=True)
+        handler.setLevel(LOG_LEVEL)
+        formatter = logging.Formatter(LOG_FORMAT)
+        handler.setFormatter(formatter)
+        self._logger.addHandler(handler)
+
         self._lock = threading.Lock()
         self._groups: dict[str, WorkerGroup] = {}
         self._exit_flag = threading.Event()
@@ -246,13 +297,15 @@ class PilotCoordinator(CoordinatorServicer):
             self._logger.exception("Failed to get running slurm job ids")
             job_ids = None
 
-        if job_ids is not None:
-            with self._lock:
-                for group in self._groups.values():
-                    for name in list(group.workers):
-                        worker = group.workers[name]
-                        if not worker.slurm_job.job_id in job_ids:
-                            self._cleanup_worker(group, worker)
+        if job_ids is None:
+            return
+
+        with self._lock:
+            for group in self._groups.values():
+                for name in list(group.workers):
+                    worker = group.workers[name]
+                    if not worker.slurm_job.job_id in job_ids:
+                        self._cleanup_worker(group, worker)
 
     def _cleanup_all_workers(self):
         try:
@@ -261,15 +314,17 @@ class PilotCoordinator(CoordinatorServicer):
             self._logger.exception("Failed to get running slurm job ids")
             job_ids = None
 
+        if job_ids is None:
+            return
+
         still_running_job_ids: list[int] = []
-        if job_ids is not None:
-            with self._lock:
-                for group in self._groups.values():
-                    for name in list(group.workers):
-                        worker = group.workers[name]
-                        if worker.slurm_job.job_id in job_ids:
-                            still_running_job_ids.append(worker.slurm_job.job_id)
-                        self._cleanup_worker(group, worker)
+        with self._lock:
+            for group in self._groups.values():
+                for name in list(group.workers):
+                    worker = group.workers[name]
+                    if worker.slurm_job.job_id in job_ids:
+                        still_running_job_ids.append(worker.slurm_job.job_id)
+                    self._cleanup_worker(group, worker)
 
         if still_running_job_ids:
             cancel_jobs(still_running_job_ids)
@@ -277,7 +332,6 @@ class PilotCoordinator(CoordinatorServicer):
     def _queue_monitor_main(self):
         while True:
             self._cleanup_finished_workers()
-
             if self._exit_flag.wait(timeout=INTER_SQUEUE_CALL_TIME_S):
                 break
 
@@ -337,7 +391,7 @@ class PilotCoordinator(CoordinatorServicer):
                     self._add_worker(group)
 
             if len(group.workers) > count:
-                to_retire = count - len(group.workers)
+                to_retire = len(group.workers) - count
 
                 # First we try to retire
                 # without running tasks
@@ -356,9 +410,9 @@ class PilotCoordinator(CoordinatorServicer):
                         worker.exit_flag = True
                         to_retire -= 1
 
-    def submit(self, type: str, fn, *args, **kwargs) -> Future:
+    def submit(self, task_id: str, type: str, fn, *args, **kwargs) -> Future:
         defn = TaskDefn(
-            task_id=str(uuid4()),
+            task_id=task_id,
             function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
             args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
             kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
@@ -392,7 +446,7 @@ class PilotCoordinator(CoordinatorServicer):
 
                 return Empty()
         except Exception as e:
-            eid = str(uuid4())
+            eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
             context.set_code(grpc.StatusCode.UNKNOWN)
             context.set_details("Unexpected exception: %s: %s" % (eid, e))
@@ -411,7 +465,7 @@ class PilotCoordinator(CoordinatorServicer):
 
                 return Empty()
         except Exception as e:
-            eid = str(uuid4())
+            eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
             context.set_code(grpc.StatusCode.UNKNOWN)
             context.set_details("Unexpected exception: %s: %s" % (eid, e))
@@ -440,7 +494,7 @@ class PilotCoordinator(CoordinatorServicer):
                         task_available=False,
                     )
         except Exception as e:
-            eid = str(uuid4())
+            eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
             context.set_code(grpc.StatusCode.UNKNOWN)
             context.set_details("Unexpected exception: %s: %s" % (eid, e))
@@ -470,7 +524,7 @@ class PilotCoordinator(CoordinatorServicer):
 
             return Empty()
         except Exception as e:
-            eid = str(uuid4())
+            eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
             context.set_code(grpc.StatusCode.UNKNOWN)
             context.set_details("Unexpected exception: %s: %s" % (eid, e))
@@ -514,21 +568,3 @@ class PilotCoordinator(CoordinatorServicer):
             self._queue_monitor_thread = None
 
             self._cleanup_all_workers()
-
-
-@click.command()
-@click.option("--type", type=str, required=True, help="Worker type")
-@click.option("--name", type=str, required=True, help="Worker job ID")
-@click.option("--server-address", type=str, required=True, help="Pilot server address")
-@click.option(
-    "--work-dir",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-    required=True,
-    help="Work directory",
-)
-def slurm_pilot_process(type: str, name: str, server_address: str, work_dir: Path):
-    """Start a slurm pilot worker."""
-    worker = PilotProcess(
-        type=type, name=name, server_address=server_address, work_dir=work_dir
-    )
-    worker.main()
