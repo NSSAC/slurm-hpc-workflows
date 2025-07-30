@@ -1,6 +1,6 @@
 {#- name: "worker_sbatch_script" -#}
 
-{% if batch_worker %}
+{% if is_batch_worker %}
 . '{{ worker_script_path }}'
 {% else %}
 srun /bin/bash '{{ worker_script_path }}'
@@ -18,7 +18,7 @@ set -x
 
 echo "Starting worker on $(hostname)"
 
-slurm-pilot-worker \
+slurm-pilot-process \
     --type '{{ type }}' \
     --name '{{ name }}' \
     --server-address '{{ server_address }}' \

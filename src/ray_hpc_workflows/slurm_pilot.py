@@ -9,10 +9,11 @@ import logging
 import random
 import string
 import threading
-from datetime import datetime
-from dataclasses import dataclass, field
-from collections import deque
 from pathlib import Path
+from typing import Callable
+from datetime import datetime
+from collections import deque
+from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import grpc
@@ -53,8 +54,8 @@ def gen_error_id() -> str:
     )
 
 
-def gen_task_id(name: str) -> str:
-    return f"TASK_{name}_" + "".join(
+def gen_task_id() -> str:
+    return f"TASK_" + "".join(
         random.choices(string.ascii_lowercase + string.digits, k=32)
     )
 
@@ -80,6 +81,7 @@ class PilotProcess:
 
         self._server_address = server_address
         self._work_dir = work_dir
+        self._exit_flag = False
         self._logger = logging.getLogger("worker_process")
 
         client_service_config = json.dumps(
@@ -107,6 +109,7 @@ class PilotProcess:
             # Retry stuff
             ("grpc.enable_retries", 1),
             ("grpc.service_config", client_service_config),
+            ("grpc-node.retry_max_attempts_limit", 100),
         ]
 
         self._channel = grpc.insecure_channel(self._server_address, options=options)
@@ -228,6 +231,7 @@ class Worker:
     exit_flag: bool = False
     is_running: bool = True
     processes: dict[str, WorkerProcess] = field(default_factory=dict)
+    is_new: bool = True
 
     def has_running_tasks(self) -> bool:
         return any(p.running_task is not None for p in self.processes.values())
@@ -245,6 +249,21 @@ class WorkerGroup:
     # Available workers: workers with exit_flag == False
     def available_workers(self) -> int:
         return sum(1 for w in self.workers.values() if w.exit_flag)
+
+
+@dataclass
+class RemoteFn:
+    type: str
+    fn: Callable
+    fn_pkl: bytes
+
+
+def remote_fn(type: str) -> Callable[[Callable], RemoteFn]:
+    def decorator(fn: Callable):
+        fn_pkl = cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL)
+        return RemoteFn(type=type, fn=fn, fn_pkl=fn_pkl)
+
+    return decorator
 
 
 class PilotCoordinator(CoordinatorServicer):
@@ -304,7 +323,10 @@ class PilotCoordinator(CoordinatorServicer):
             for group in self._groups.values():
                 for name in list(group.workers):
                     worker = group.workers[name]
-                    if not worker.slurm_job.job_id in job_ids:
+                    if worker.is_new:
+                        worker.is_new = False
+                        continue
+                    elif not worker.slurm_job.job_id in job_ids:
                         self._cleanup_worker(group, worker)
 
     def _cleanup_all_workers(self):
@@ -353,11 +375,11 @@ class PilotCoordinator(CoordinatorServicer):
 
         worker_index = group.next_worker_index
         group.next_worker_index += 1
-        name = f"slurm_pilot_worker.{type}.{worker_index}"
+        name = f"slurm_pilot_worker.{group.type}.{worker_index}"
 
         worker_script = render_template(
             "slurm_pilot:worker_script",
-            type=type,
+            type=group.type,
             name=name,
             server_address=self._server_address,
             work_dir=str(self.work_dir),
@@ -410,21 +432,40 @@ class PilotCoordinator(CoordinatorServicer):
                         worker.exit_flag = True
                         to_retire -= 1
 
-    def submit(self, task_id: str, type: str, fn, *args, **kwargs) -> Future:
+    def submit(self, fn: RemoteFn, *args, **kwargs) -> Future:
+        task_id = kwargs.pop("_task_id", None)
+        if task_id is None:
+            task_id = gen_task_id()
+
         defn = TaskDefn(
             task_id=task_id,
-            function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
+            function=fn.fn_pkl,
             args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
             kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
-            type=type,
+            type=fn.type,
         )
         task = TaskDefnWithFut(defn=defn, fut=Future())
 
         with self._lock:
-            group = self._groups[type]
+            group = self._groups[fn.type]
             group.task_queue.append(task)
 
         return task.fut
+
+    def num_groups(self):
+        with self._lock:
+            return len(self._groups)
+
+    def num_workers(self):
+        with self._lock:
+            return {g.type: len(g.workers) for g in self._groups.values()}
+
+    def num_processes(self):
+        with self._lock:
+            return {
+                g.type: {w.name: len(w.processes) for w in g.workers.values()}
+                for g in self._groups.values()
+            }
 
     def RegisterWorkerProcess(
         self, request: WorkerProcessID, context: grpc.ServicerContext
@@ -536,6 +577,7 @@ class PilotCoordinator(CoordinatorServicer):
 
         self._exit_flag.clear()
         self._queue_monitor_thread = threading.Thread(target=self._queue_monitor_main)
+        self._queue_monitor_thread.start()
 
         host = data_address(None)
         port = arbitrary_free_port(host)
@@ -553,14 +595,14 @@ class PilotCoordinator(CoordinatorServicer):
 
         self._server_address = f"{host}:{port}"
         self._server = grpc.server(ThreadPoolExecutor(max_workers=1), options=options)
-        add_CoordinatorServicer_to_server(self, self.server)
+        add_CoordinatorServicer_to_server(self, self._server)
         self._server.add_insecure_port(self._server_address)
         self._server.start()
 
     def close(self):
-        if self.server is not None:
-            self.server.stop(None)
-            self.server = None
+        if self._server is not None:
+            self._server.stop(None)
+            self._server = None
 
         if self._queue_monitor_thread is not None:
             self._exit_flag.set()
@@ -568,3 +610,6 @@ class PilotCoordinator(CoordinatorServicer):
             self._queue_monitor_thread = None
 
             self._cleanup_all_workers()
+
+    def stop(self):
+        self.close()

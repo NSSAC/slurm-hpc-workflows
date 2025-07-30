@@ -44,4 +44,4 @@ where = ["src"]
 
 [project.scripts]
 "run-jupyter" = "ray_hpc_workflows.run_jupyter:run_jupyter"
-"slurm-pilot-worker" = "ray_hpc_workflows.slurm_pilot:slurm_pilot_worker"
+"slurm-pilot-process" = "ray_hpc_workflows.slurm_pilot:slurm_pilot_process"
