@@ -38,7 +38,7 @@ def run_jupyter(
     )
 
     now = datetime.now().isoformat()
-    work_dir = platformdirs.user_cache_path(appname=f"run-jupyter-{now}")
+    work_dir = platformdirs.user_cache_path(appname=f"run-jupyter") / now
     work_dir.mkdir(parents=True)
 
     try:

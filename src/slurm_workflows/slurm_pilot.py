@@ -11,6 +11,7 @@ import logging
 import random
 import string
 import threading
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from collections import deque
@@ -236,6 +237,9 @@ class Worker:
     processes: dict[str, WorkerProcess] = field(default_factory=dict)
     is_new: bool = True
 
+    def has_active_processes(self) -> bool:
+        return len(self.processes) > 0
+
     def has_running_tasks(self) -> bool:
         return any(p.running_task is not None for p in self.processes.values())
 
@@ -309,6 +313,15 @@ class SlurmPilotExecutor(CoordinatorServicer):
     def _cleanup_finished_workers(self):
         try:
             job_ids = get_running_jobids()
+        except subprocess.CalledProcessError as cp:
+            self._logger.warning(
+                "Failed to get running slurm job ids: returncode=%s", cp.returncode
+            )
+            if cp.stdout.strip():
+                self._logger.warning("stdout=%s", cp.stdout)
+            if cp.stderr.strip():
+                self._logger.warning("stderr=%s", cp.stderr)
+            job_ids = None
         except Exception:
             self._logger.exception("Failed to get running slurm job ids")
             job_ids = None
@@ -316,6 +329,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
         if job_ids is None:
             return
 
+        to_cancel_jobs: list[int] = []
         with self._lock:
             for group in self._groups.values():
                 for name in list(group.workers):
@@ -325,10 +339,34 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         continue
                     elif not worker.slurm_job.job_id in job_ids:
                         self._cleanup_worker(group, worker)
+                    elif not worker.has_active_processes() and worker.exit_flag:
+                        to_cancel_jobs.append(worker.slurm_job.job_id)
+                        self._cleanup_worker(group, worker)
+
+        if to_cancel_jobs:
+            try:
+                cancel_jobs(to_cancel_jobs)
+            except subprocess.CalledProcessError as cp:
+                self._logger.warning(
+                    "Failed to cancel jobs: returncode=%s", cp.returncode
+                )
+                if cp.stdout.strip():
+                    self._logger.warning("stdout=%s", cp.stdout)
+                if cp.stderr.strip():
+                    self._logger.warning("stderr=%s", cp.stderr)
+            except Exception:
+                self._logger.exception("Failed to get running slurm job ids")
 
     def _cleanup_all_workers(self):
         try:
             job_ids = get_running_jobids()
+        except subprocess.CalledProcessError as cp:
+            print(f"Failed to get running slurm job ids: returncode={cp.returncode}")
+            if cp.stdout.strip():
+                print(cp.stdout)
+            if cp.stderr.strip():
+                print(cp.stderr)
+            job_ids = None
         except Exception:
             self._logger.exception("Failed to get running slurm job ids")
             job_ids = None
@@ -346,7 +384,16 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     self._cleanup_worker(group, worker)
 
         if still_running_job_ids:
-            cancel_jobs(still_running_job_ids)
+            try:
+                cancel_jobs(still_running_job_ids)
+            except subprocess.CalledProcessError as cp:
+                print(f"Failed to cancel slurm jobs: returncode={cp.returncode}")
+                if cp.stdout.strip():
+                    print(cp.stdout)
+                if cp.stderr.strip():
+                    print(cp.stderr)
+            except Exception:
+                self._logger.exception("Failed to cancel slurm jobs")
 
     def _queue_monitor_main(self):
         while True:
@@ -392,14 +439,22 @@ class SlurmPilotExecutor(CoordinatorServicer):
             worker_script_path=worker_script_path,
         )
 
-        self._logger.info(f"Starting worker %s", name)
-        slurm_job = submit_sbatch_job(
-            name=name,
-            sbatch_args=group.sbatch_args,
-            script=worker_sbatch_script,
-            work_dir=self.work_dir,
-        )
-        group.workers[name] = Worker(name=name, slurm_job=slurm_job)
+        print(f"Starting worker {name}")
+        try:
+            slurm_job = submit_sbatch_job(
+                name=name,
+                sbatch_args=group.sbatch_args,
+                script=worker_sbatch_script,
+                work_dir=self.work_dir,
+            )
+            group.workers[name] = Worker(name=name, slurm_job=slurm_job)
+        except subprocess.CalledProcessError as cp:
+            print(f"Failed to cancel slurm jobs: returncode={cp.returncode}")
+            if cp.stdout.strip():
+                print(cp.stdout)
+            if cp.stderr.strip():
+                print(cp.stdout)
+            raise cp
 
     def scale_workers(self, type: str, count: int):
         with self._lock:
@@ -413,6 +468,18 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 to_retire = len(group.workers) - count
 
                 # First we try to retire
+                # without active processes
+                for worker in group.workers.values():
+                    if (
+                        to_retire > 0
+                        and not worker.exit_flag
+                        and not worker.has_active_processes()
+                    ):
+                        print(f"Setting exit_flag for worker: {worker.name}")
+                        worker.exit_flag = True
+                        to_retire -= 1
+
+                # Next we try to retire
                 # without running tasks
                 for worker in group.workers.values():
                     if (
@@ -420,18 +487,14 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         and not worker.exit_flag
                         and not worker.has_running_tasks()
                     ):
-                        self._logger.info(
-                            f"Setting exit_flag for worker %s", worker.name
-                        )
+                        print(f"Setting exit_flag for worker: {worker.name}")
                         worker.exit_flag = True
                         to_retire -= 1
 
                 # Next we retire active workers
                 for worker in group.workers.values():
                     if to_retire > 0 and not worker.exit_flag:
-                        self._logger.info(
-                            f"Setting exit_flag for worker %s", worker.name
-                        )
+                        print(f"Setting exit_flag for worker: {worker.name}")
                         worker.exit_flag = True
                         to_retire -= 1
 
