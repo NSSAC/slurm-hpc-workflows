@@ -1,5 +1,7 @@
 """Pilot workers for slurm."""
 
+from __future__ import annotations, generator_stop
+
 import os
 import time
 import json
@@ -10,16 +12,16 @@ import random
 import string
 import threading
 from pathlib import Path
-from typing import Callable
 from datetime import datetime
 from collections import deque
 from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ThreadPoolExecutor, Future, wait
 
 import grpc
 import click
 import platformdirs
 import cloudpickle
+from more_itertools import chunked
 
 from .slurm_job_manager import (
     get_running_jobids,
@@ -251,22 +253,14 @@ class WorkerGroup:
         return sum(1 for w in self.workers.values() if w.exit_flag)
 
 
-@dataclass
-class RemoteFn:
-    type: str
-    fn: Callable
-    fn_pkl: bytes
+def _map_chunk(fn, args_list):
+    results = []
+    for args in args_list:
+        results.append(fn(*args))
+    return results
 
 
-def remote_fn(type: str) -> Callable[[Callable], RemoteFn]:
-    def decorator(fn: Callable):
-        fn_pkl = cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL)
-        return RemoteFn(type=type, fn=fn, fn_pkl=fn_pkl)
-
-    return decorator
-
-
-class PilotCoordinator(CoordinatorServicer):
+class SlurmPilotExecutor(CoordinatorServicer):
     def __init__(
         self,
         work_dir: Path | str | None = None,
@@ -292,6 +286,7 @@ class PilotCoordinator(CoordinatorServicer):
         self._groups: dict[str, WorkerGroup] = {}
         self._exit_flag = threading.Event()
         self._queue_monitor_thread: threading.Thread | None = None
+
         self._server_address: str | None = None
         self._server: grpc.Server | None = None
 
@@ -304,6 +299,7 @@ class PilotCoordinator(CoordinatorServicer):
         del worker.processes[process.key]
 
     def _cleanup_worker(self, group: WorkerGroup, worker: Worker):
+        self._logger.info(f"Cleaning up worker %s", worker.name)
         for key in list(worker.processes):
             process = worker.processes[key]
             self._cleanup_process(group, worker, process)
@@ -423,34 +419,51 @@ class PilotCoordinator(CoordinatorServicer):
                         and not worker.exit_flag
                         and not worker.has_running_tasks()
                     ):
+                        self._logger.info(
+                            f"Setting exit_flag for worker %s", worker.name
+                        )
                         worker.exit_flag = True
                         to_retire -= 1
 
                 # Next we retire active workers
                 for worker in group.workers.values():
                     if to_retire > 0 and not worker.exit_flag:
+                        self._logger.info(
+                            f"Setting exit_flag for worker %s", worker.name
+                        )
                         worker.exit_flag = True
                         to_retire -= 1
 
-    def submit(self, fn: RemoteFn, *args, **kwargs) -> Future:
-        task_id = kwargs.pop("_task_id", None)
-        if task_id is None:
-            task_id = gen_task_id()
-
+    def submit(self, type: str, fn, *args, **kwargs) -> Future:
+        task_id = gen_task_id()
         defn = TaskDefn(
             task_id=task_id,
-            function=fn.fn_pkl,
+            function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
             args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
             kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
-            type=fn.type,
+            type=type,
         )
         task = TaskDefnWithFut(defn=defn, fut=Future())
 
         with self._lock:
-            group = self._groups[fn.type]
+            group = self._groups[type]
             group.task_queue.append(task)
 
         return task.fut
+
+    def map(self, type: str, fn, *iterables, chunksize: int = 1):
+        futs: list[Future] = []
+        args_list_chunks = chunked(zip(*iterables), chunksize)
+        for arg_list_chunk in args_list_chunks:
+            futs.append(self.submit(type, _map_chunk, fn, arg_list_chunk))
+
+        wait(futs)
+
+        results = []
+        for fut in futs:
+            results.extend(fut.result())
+
+        return results
 
     def num_groups(self):
         with self._lock:
@@ -579,9 +592,6 @@ class PilotCoordinator(CoordinatorServicer):
         self._queue_monitor_thread = threading.Thread(target=self._queue_monitor_main)
         self._queue_monitor_thread.start()
 
-        host = data_address(None)
-        port = arbitrary_free_port(host)
-
         options = [
             ("grpc.keepalive_time_ms", 20000),
             ("grpc.keepalive_timeout_ms", 10000),
@@ -593,6 +603,8 @@ class PilotCoordinator(CoordinatorServicer):
             ("grpc.keepalive_permit_without_calls", 1),
         ]
 
+        host = data_address(None)
+        port = arbitrary_free_port(host)
         self._server_address = f"{host}:{port}"
         self._server = grpc.server(ThreadPoolExecutor(max_workers=1), options=options)
         add_CoordinatorServicer_to_server(self, self._server)

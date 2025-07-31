@@ -32,8 +32,8 @@ dependencies = [
     "dask[complete]",
     "grpcio",
     "grpcio-tools",
-    "cloudpickle"
-
+    "cloudpickle",
+    "prometheus-client",
 ]
 
 [tool.setuptools.packages.find]
