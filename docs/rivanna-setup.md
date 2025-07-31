@@ -1,4 +1,4 @@
-# How to setup ray-hpc-workflows on Rivanna
+# How to setup slurm-workflows on Rivanna
 
 ## Setup your personal Miniforge environment
 
@@ -61,7 +61,7 @@ conda update -n base --all --yes
 
 ## Setup Cross-Desktop Group (XDG) user directories
 
-Ray HPC workflows uses the XDG user directories
+Slurm workflows uses the XDG user directories
 for storing temporary and runtime files.
 On Rivanna we use `/scratch` for this.
 Add the following lines at the end of your `$HOME/.bashrc`
@@ -88,50 +88,41 @@ mkdir -p "$XDG_STATE_HOME"
 mkdir -p "$XDG_RUNTIME_DIR"
 ```
 
-## Create a conda environment for ray-hpc-workflows
+## Create a conda environment for slurm-workflows
 
-We shall create a separate environment to install ray-hpc-workflows.
-Create and activate a conda environment called `ray-env`.
+We shall create a separate environment to install slurm-workflows.
+Create and activate a conda environment called `workflow-env`.
 
 ```sh
-conda create -n ray-env --yes python=3.12 nodejs=20 jupyterlab=4 nb_conda_kernels jupyterlab_widgets "numpy<2" scipy cmake ccache
-conda activate ray-env
+conda create -n workflow-env --yes python=3.12 nodejs=22 nb_conda_kernels
+conda activate workflow-env
+pip install -v jupyterlab
 ```
 
-Clone ray-hpc-workflows repository in your home directory and install it.
+Clone slurm-workflows repository in your home directory and install it.
 ```sh
 cd $HOME
-git clone https://github.com/NSSAC/ray-hpc-workflows.git
-cd ray-hpc-workflows
-pip install -e .
+git clone https://github.com/NSSAC/slurm-workflows.git
+cd slurm-workflows
+pip install -ve .
 ```
 
-## Create default setup script for ray-hpc-workflows
+## Create default setup script for slurm-workflows
 
-We shall create a setup script for ray-hpc-workflows.
+We shall create a setup script for slur-workflows.
 This is used to setup environments when they workflow system creates slurm jobs.
 Create the file `$HOME/default-env.sh` with the following content.
 
 ```sh
-module load gcc/13.3.0
-module load hdf5/1.14.4.3
-module load cuda/12.4.1
-
-export CMAKE_BUILD_PARALLEL_LEVEL=40
-export CMAKE_BUILD_TYPE=Release
-
-export HDF5_USE_FILE_LOCKING=FALSE
-export CFLAGS="-march=x86-64 -mavx -mavx2 -mfma"
-export CXXFLAGS="-march=x86-64 -mavx -mavx2 -mfma"
+module load gcc/14.2.0
+module load openmpi/5.0.7
 
 CONDA_ENVS_DIR="/project/bii_nssac/people/$USER/conda-envs"
-
-export RAY_EXECUTABLE="${CONDA_ENVS_DIR}/ray-env/bin/ray"
 ```
 
 ## Setup password for Jupyter Lab
 
-Ensure that `ray-env` is still activated.
+Ensure that `workflow-env` is still activated.
 
 ```sh
 jupyter lab password
@@ -164,13 +155,13 @@ From FoxyProxy's settings go to Options tab and import the configuration file.
 Close the FoxyProxy settings tab.
 Go back to FoxyProxy's settings and ensure that FoxyProxy is configured to enable proxy by patterns.
 
-## Start jupyter from ray-hpc-workflows on Rivanna
+## Start jupyter from slur-workflows on Rivanna
 
 Ensure you are logged into Rivanna via ssh.
-Also ensure that `ray-env` is still activated.
+Also ensure that `workflow-env` is still activated.
 
 ```sh
-run-jupyter --type rivanna:bii --account <ACCOUNT-NAME> --runtime-h 2
+run-jupyter -- -A bii_nssac -p bii --nodes=1 --ntasks-per-node=1 --cpus-per-task=40 --mem=0 -t 3-00:00:00
 ```
 
 Wait for the job to start.
@@ -205,7 +196,7 @@ Jupyter notebook is running.
 
 ## Stop Jupyter Lab on Rivanna when no longer in use
 
-Once your session is over ensure that you cancel any running Jupyter Lab or
-ray-worker sessions.
+Once your session is over ensure that you cancel any running Jupyter Lab and
+other slurm jobs.
 
 Use `squeue` to see if any are running and use `scancel` to stop those jobs.

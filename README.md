@@ -1,14 +1,8 @@
-# HPC Workflows Using
+# HPC workflow helpers for Slurm clusters
 
-Ray HPC workflows is a package for running [Ray][ray] on Slurm clusters.
-It includes utilities to programmatically start, scale, and stop
-Ray clusters on top of Slurm.
+Slurm Workflows is a package of helper utilities
+to run jobs on Slurm clusters.
+It includes utilities to
+programmatically start, scale, and stop pilot jobs on Slurm clusters,
+and provides a Executors like interface to run tasks on those pilot servers.
 
-This is different from other Ray on Slurm cluster scripts
-in that it allows programmatic scaling of the Ray cluster.
-
-## Documentation
-
-* [How to setup ray-hpc-workflows on Rivanna](docs/rivanna-setup.md)
-
-[ray]: https://docs.ray.io/en/latest/ "Ray"
