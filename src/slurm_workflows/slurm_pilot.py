@@ -64,6 +64,13 @@ def gen_task_id() -> str:
     )
 
 
+def wait_with_progress(futs, desc: str | None = None, unit: str = "it"):
+    it = as_completed(futs)
+    it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
+    for _ in it:
+        pass
+
+
 class PilotProcess:
     def __init__(
         self,
