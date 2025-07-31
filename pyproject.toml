@@ -19,21 +19,16 @@ classifiers = [
 
 dependencies = [
     "click",
-    "rich",
+    "tqdm",
     "jinja2",
     "psutil",
     "netifaces",
-    "pydantic",
     "platformdirs",
-    "python-dotenv",
-    "psycopg2-binary",
-    "ray[default]",
     "more-itertools",
-    "dask[complete]",
+    "psycopg2-binary",
     "grpcio",
     "grpcio-tools",
     "cloudpickle",
-    "prometheus-client",
 ]
 
 [tool.setuptools.packages.find]
