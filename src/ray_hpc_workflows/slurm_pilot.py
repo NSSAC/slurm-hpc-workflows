@@ -15,8 +15,9 @@ from pathlib import Path
 from datetime import datetime
 from collections import deque
 from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, Future, wait
+from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 
+import tqdm
 import grpc
 import click
 import platformdirs
@@ -451,13 +452,24 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
         return task.fut
 
-    def map(self, type: str, fn, *iterables, chunksize: int = 1):
+    def map(
+        self,
+        type: str,
+        fn,
+        *iterables,
+        chunksize: int = 1,
+        unit: str = "it",
+        desc: str | None = None,
+    ):
         futs: list[Future] = []
         args_list_chunks = chunked(zip(*iterables), chunksize)
         for arg_list_chunk in args_list_chunks:
             futs.append(self.submit(type, _map_chunk, fn, arg_list_chunk))
 
-        wait(futs)
+        it = as_completed(futs)
+        it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
+        for _ in it:
+            pass
 
         results = []
         for fut in futs:
