@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
+requires = ["setuptools", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "slurm-workflows"
-dynamic = ["version"]
+version = "0.1.0"
 authors = [
   { name="Parantapa Bhattacharya", email="parantapa@virginia.edu" },
 ]
@@ -29,6 +29,7 @@ dependencies = [
     "grpcio",
     "grpcio-tools",
     "cloudpickle",
+    "typeguard",
 ]
 
 [tool.setuptools.packages.find]

@@ -17,6 +17,7 @@ from datetime import datetime
 from collections import deque
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
+from typing import Callable, Iterable, Any
 
 import tqdm
 import grpc
@@ -24,6 +25,7 @@ import click
 import platformdirs
 import cloudpickle
 from more_itertools import chunked
+from typeguard import typechecked
 
 from .slurm_job_manager import (
     get_running_jobids,
@@ -64,7 +66,10 @@ def gen_task_id() -> str:
     )
 
 
-def wait_with_progress(futs, desc: str | None = None, unit: str = "it"):
+@typechecked
+def wait_with_progress(
+    futs: list[Future], desc: str | None = None, unit: str = "it"
+) -> None:
     it = as_completed(futs)
     it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
     for _ in it:
@@ -408,9 +413,10 @@ class SlurmPilotExecutor(CoordinatorServicer):
             if self._exit_flag.wait(timeout=INTER_SQUEUE_CALL_TIME_S):
                 break
 
+    @typechecked
     def define_worker(
         self, type: str, sbatch_args: list[str], is_batch_worker: bool = False
-    ):
+    ) -> None:
         with self._lock:
             group = WorkerGroup(
                 type=type, sbatch_args=sbatch_args, is_batch_worker=is_batch_worker
@@ -463,8 +469,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 print(cp.stdout)
             raise cp
 
-    def scale_workers(self, type: str, count: int):
+    @typechecked
+    def scale_workers(self, type: str, count: int) -> None:
         with self._lock:
+            assert type in self._groups, "Unknown worker type"
+
             group = self._groups[type]
             if len(group.workers) < count:
                 to_hire = count - len(group.workers)
@@ -505,7 +514,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         worker.exit_flag = True
                         to_retire -= 1
 
-    def submit(self, type: str, fn, *args, **kwargs) -> Future:
+    def _submit(self, type: str, fn: Callable, *args, **kwargs) -> Future:
         task_id = gen_task_id()
         defn = TaskDefn(
             task_id=task_id,
@@ -522,19 +531,30 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
         return task.fut
 
+    @typechecked
+    def submit(self, type: str, fn: Callable, *args, **kwargs) -> Future:
+        with self._lock:
+            assert type in self._groups, "Unknown worker type"
+
+        return self._submit(type, fn, *args, **kwargs)
+
+    @typechecked
     def map(
         self,
         type: str,
-        fn,
-        *iterables,
+        fn: Callable,
+        *iterables: Iterable,
         chunksize: int = 1,
         unit: str = "it",
         desc: str | None = None,
-    ):
+    ) -> list[Any]:
+        with self._lock:
+            assert type in self._groups, "Unknown worker type"
+
         futs: list[Future] = []
         args_list_chunks = chunked(zip(*iterables), chunksize)
         for arg_list_chunk in args_list_chunks:
-            futs.append(self.submit(type, _map_chunk, fn, arg_list_chunk))
+            futs.append(self._submit(type, _map_chunk, fn, arg_list_chunk))
 
         it = as_completed(futs)
         it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
@@ -551,16 +571,26 @@ class SlurmPilotExecutor(CoordinatorServicer):
         with self._lock:
             return len(self._groups)
 
-    def num_workers(self):
+    def num_workers(self, detail: bool = False):
         with self._lock:
-            return {g.type: len(g.workers) for g in self._groups.values()}
+            if detail:
+                return {g.type: len(g.workers) for g in self._groups.values()}
+            else:
+                return sum(len(g.workers) for g in self._groups.values())
 
-    def num_processes(self):
+    def num_processes(self, detail: bool = False):
         with self._lock:
-            return {
-                g.type: {w.name: len(w.processes) for w in g.workers.values()}
-                for g in self._groups.values()
-            }
+            if detail:
+                return {
+                    g.type: {w.name: len(w.processes) for w in g.workers.values()}
+                    for g in self._groups.values()
+                }
+            else:
+                return sum(
+                    len(w.processes)
+                    for g in self._groups.values()
+                    for w in g.workers.values()
+                )
 
     def RegisterWorkerProcess(
         self, request: WorkerProcessID, context: grpc.ServicerContext
