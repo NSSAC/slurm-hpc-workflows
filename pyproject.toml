@@ -30,6 +30,7 @@ dependencies = [
     "grpcio-tools",
     "cloudpickle",
     "typeguard",
+    "polars",
 ]
 
 [tool.setuptools.packages.find]
