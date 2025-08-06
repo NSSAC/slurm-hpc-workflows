@@ -483,7 +483,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
             worker_script_path=worker_script_path,
         )
 
-        print(f"Starting worker {name}")
+        self._logger.info("Starting worker %s", name)
         try:
             slurm_job = submit_sbatch_job(
                 name=name,
@@ -522,7 +522,9 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         and not worker.exit_flag
                         and not worker.has_active_processes()
                     ):
-                        print(f"Setting exit_flag for worker: {worker.name}")
+                        self._logger.info(
+                            "Setting exit_flag for worker: %s", worker.name
+                        )
                         worker.exit_flag = True
                         to_retire -= 1
 
@@ -534,14 +536,18 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         and not worker.exit_flag
                         and not worker.has_running_tasks()
                     ):
-                        print(f"Setting exit_flag for worker: {worker.name}")
+                        self._logger.info(
+                            "Setting exit_flag for worker: %s", worker.name
+                        )
                         worker.exit_flag = True
                         to_retire -= 1
 
                 # Next we retire active workers
                 for worker in group.workers.values():
                     if to_retire > 0 and not worker.exit_flag:
-                        print(f"Setting exit_flag for worker: {worker.name}")
+                        self._logger.info(
+                            "Setting exit_flag for worker: %s", worker.name
+                        )
                         worker.exit_flag = True
                         to_retire -= 1
 
