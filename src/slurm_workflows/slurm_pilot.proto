@@ -23,7 +23,6 @@ message TaskDefn {
   bytes function = 2;
   bytes args = 3;
   bytes kwargs = 4;
-  string type = 5;
 }
 
 message TaskAssignment {

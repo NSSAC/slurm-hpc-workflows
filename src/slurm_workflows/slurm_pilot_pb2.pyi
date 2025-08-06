@@ -24,18 +24,16 @@ class WorkerProcessID(_message.Message):
     def __init__(self, type: _Optional[str] = ..., name: _Optional[str] = ..., slurm_job_id: _Optional[int] = ..., hostname: _Optional[str] = ..., pid: _Optional[int] = ...) -> None: ...
 
 class TaskDefn(_message.Message):
-    __slots__ = ("task_id", "function", "args", "kwargs", "type")
+    __slots__ = ("task_id", "function", "args", "kwargs")
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
     FUNCTION_FIELD_NUMBER: _ClassVar[int]
     ARGS_FIELD_NUMBER: _ClassVar[int]
     KWARGS_FIELD_NUMBER: _ClassVar[int]
-    TYPE_FIELD_NUMBER: _ClassVar[int]
     task_id: str
     function: bytes
     args: bytes
     kwargs: bytes
-    type: str
-    def __init__(self, task_id: _Optional[str] = ..., function: _Optional[bytes] = ..., args: _Optional[bytes] = ..., kwargs: _Optional[bytes] = ..., type: _Optional[str] = ...) -> None: ...
+    def __init__(self, task_id: _Optional[str] = ..., function: _Optional[bytes] = ..., args: _Optional[bytes] = ..., kwargs: _Optional[bytes] = ...) -> None: ...
 
 class TaskAssignment(_message.Message):
     __slots__ = ("exit_flag", "task_available", "task")

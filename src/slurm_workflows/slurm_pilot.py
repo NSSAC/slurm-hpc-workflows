@@ -5,6 +5,7 @@ from __future__ import annotations, generator_stop
 import os
 import time
 import json
+import heapq
 import pickle
 import socket
 import logging
@@ -14,7 +15,6 @@ import threading
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from collections import deque
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from typing import Callable, Iterable, Any
@@ -199,7 +199,7 @@ class PilotProcess:
 
 @click.command()
 @click.option("--type", type=str, required=True, help="Worker type")
-@click.option("--name", type=str, required=True, help="Worker job ID")
+@click.option("--name", type=str, required=True, help="Worker job name")
 @click.option("--server-address", type=str, required=True, help="Pilot server address")
 @click.option(
     "--work-dir",
@@ -215,6 +215,9 @@ def slurm_pilot_process(type: str, name: str, server_address: str, work_dir: Pat
     log_file = work_dir / f"{name}-{slurm_job_id}-{hostname}-{pid}.log"
     logging.basicConfig(filename=log_file, format=LOG_FORMAT, level=LOG_LEVEL)
 
+    os.environ["PILOT_PROCESS_NAME"] = name
+    os.environ["PILOT_PROCESS_TYPE"] = type
+
     worker = PilotProcess(
         type=type,
         name=name,
@@ -227,17 +230,42 @@ def slurm_pilot_process(type: str, name: str, server_address: str, work_dir: Pat
     worker.main()
 
 
+@dataclass(order=True)
+class TaskMeta:
+    defn: TaskDefn = field(compare=False)
+    fut: Future = field(compare=False)
+    priority: float = field(compare=True)
+    types: list[str] = field(compare=False)
+    is_assigned: bool = field(compare=False, default=False)
+
+    @property
+    def id(self) -> str:
+        return self.defn.task_id
+
+
 @dataclass
-class TaskDefnWithFut:
-    defn: TaskDefn
-    fut: Future
+class TaskQueue:
+    queue: list[TaskMeta] = field(default_factory=list)
+
+    def push(self, task: TaskMeta):
+        assert task.is_assigned == False
+        heapq.heappush(self.queue, task)
+
+    def pop(self) -> TaskMeta | None:
+        while self.queue:
+            task = heapq.heappop(self.queue)
+            if not task.is_assigned:
+                task.is_assigned = True
+                return task
+
+        return None
 
 
 @dataclass
 class WorkerProcess:
     key: str
     process_id: WorkerProcessID
-    running_task: TaskDefnWithFut | None = None
+    running_task: TaskMeta | None = None
 
 
 @dataclass
@@ -263,14 +291,14 @@ class WorkerGroup:
     is_batch_worker: bool
     workers: dict[str, Worker] = field(default_factory=dict)
     next_worker_index: int = 0
-    task_queue: deque[TaskDefnWithFut] = field(default_factory=deque)
+    task_queue: TaskQueue = field(default_factory=TaskQueue)
 
     # Available workers: workers with exit_flag == False
     def available_workers(self) -> int:
         return sum(1 for w in self.workers.values() if w.exit_flag)
 
 
-def _map_chunk(fn, args_list):
+def _map_chunk(fn: Callable, args_list: list):
     results = []
     for args in args_list:
         results.append(fn(*args))
@@ -307,11 +335,14 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._server_address: str | None = None
         self._server: grpc.Server | None = None
 
-    def _cleanup_process(
-        self, group: WorkerGroup, worker: Worker, process: WorkerProcess
-    ):
+    def _queue_task(self, task: TaskMeta):
+        task.is_assigned = False
+        for type in task.types:
+            self._groups[type].task_queue.push(task)
+
+    def _cleanup_process(self, worker: Worker, process: WorkerProcess):
         if process.running_task is not None:
-            group.task_queue.appendleft(process.running_task)
+            self._queue_task(process.running_task)
             process.running_task = None
         del worker.processes[process.key]
 
@@ -319,7 +350,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._logger.info(f"Cleaning up worker %s", worker.name)
         for key in list(worker.processes):
             process = worker.processes[key]
-            self._cleanup_process(group, worker, process)
+            self._cleanup_process(worker, process)
         del group.workers[worker.name]
 
     def _cleanup_finished_workers(self):
@@ -514,47 +545,53 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         worker.exit_flag = True
                         to_retire -= 1
 
-    def _submit(self, type: str, fn: Callable, *args, **kwargs) -> Future:
+    def _submit(
+        self, types: list[str], priority: float, fn: Callable, *args, **kwargs
+    ) -> Future:
         task_id = gen_task_id()
         defn = TaskDefn(
             task_id=task_id,
             function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
             args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
             kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
-            type=type,
         )
-        task = TaskDefnWithFut(defn=defn, fut=Future())
+        task = TaskMeta(defn=defn, fut=Future(), priority=priority, types=types)
 
         with self._lock:
-            group = self._groups[type]
-            group.task_queue.append(task)
+            self._queue_task(task)
 
         return task.fut
 
     @typechecked
-    def submit(self, type: str, fn: Callable, *args, **kwargs) -> Future:
-        with self._lock:
-            assert type in self._groups, "Unknown worker type"
+    def submit(self, type: str | list[str], fn: Callable, *args, **kwargs) -> Future:
+        if isinstance(type, str):
+            types = [type]
+        else:
+            types = type
+        priority = time.perf_counter()
 
-        return self._submit(type, fn, *args, **kwargs)
+        return self._submit(types, priority, fn, *args, **kwargs)
 
     @typechecked
     def map(
         self,
-        type: str,
+        type: str | list[str],
         fn: Callable,
         *iterables: Iterable,
         chunksize: int = 1,
         unit: str = "it",
         desc: str | None = None,
     ) -> list[Any]:
-        with self._lock:
-            assert type in self._groups, "Unknown worker type"
+        if isinstance(type, str):
+            types = [type]
+        else:
+            types = type
+        priority = time.perf_counter()
 
         futs: list[Future] = []
         args_list_chunks = chunked(zip(*iterables), chunksize)
         for arg_list_chunk in args_list_chunks:
-            futs.append(self._submit(type, _map_chunk, fn, arg_list_chunk))
+            futs.append(self._submit(types, priority, _map_chunk, fn, arg_list_chunk))
 
         it = as_completed(futs)
         it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
@@ -627,7 +664,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 worker = group.workers[request.name]
                 process_key = f"{request.slurm_job_id}:{request.hostname}:{request.pid}"
                 process = worker.processes[process_key]
-                self._cleanup_process(group, worker, process)
+                self._cleanup_process(worker, process)
 
                 return Empty()
         except Exception as e:
@@ -648,17 +685,25 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 process = worker.processes[process_key]
                 assert process.running_task is None
 
-                if group.task_queue and not worker.exit_flag:
-                    task = group.task_queue.popleft()
-                    process.running_task = task
-                    return TaskAssignment(
-                        exit_flag=worker.exit_flag, task_available=True, task=task.defn
-                    )
-                else:
+                if worker.exit_flag:
                     return TaskAssignment(
                         exit_flag=worker.exit_flag,
                         task_available=False,
                     )
+                else:
+                    task = group.task_queue.pop()
+                    if task is not None:
+                        process.running_task = task
+                        return TaskAssignment(
+                            exit_flag=worker.exit_flag,
+                            task_available=True,
+                            task=task.defn,
+                        )
+                    else:
+                        return TaskAssignment(
+                            exit_flag=worker.exit_flag,
+                            task_available=False,
+                        )
         except Exception as e:
             eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
