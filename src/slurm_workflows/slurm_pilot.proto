@@ -38,4 +38,5 @@ message TaskResult {
   string error = 4;
   string error_id = 5;
   WorkerProcessID process_id = 6;
+  double runtime = 7;
 }

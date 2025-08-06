@@ -46,17 +46,19 @@ class TaskAssignment(_message.Message):
     def __init__(self, exit_flag: bool = ..., task_available: bool = ..., task: _Optional[_Union[TaskDefn, _Mapping]] = ...) -> None: ...
 
 class TaskResult(_message.Message):
-    __slots__ = ("task_id", "task_success", "return_", "error", "error_id", "process_id")
+    __slots__ = ("task_id", "task_success", "return_", "error", "error_id", "process_id", "runtime")
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
     TASK_SUCCESS_FIELD_NUMBER: _ClassVar[int]
     RETURN__FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     ERROR_ID_FIELD_NUMBER: _ClassVar[int]
     PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
+    RUNTIME_FIELD_NUMBER: _ClassVar[int]
     task_id: str
     task_success: bool
     return_: bytes
     error: str
     error_id: str
     process_id: WorkerProcessID
-    def __init__(self, task_id: _Optional[str] = ..., task_success: bool = ..., return_: _Optional[bytes] = ..., error: _Optional[str] = ..., error_id: _Optional[str] = ..., process_id: _Optional[_Union[WorkerProcessID, _Mapping]] = ...) -> None: ...
+    runtime: float
+    def __init__(self, task_id: _Optional[str] = ..., task_success: bool = ..., return_: _Optional[bytes] = ..., error: _Optional[str] = ..., error_id: _Optional[str] = ..., process_id: _Optional[_Union[WorkerProcessID, _Mapping]] = ..., runtime: _Optional[float] = ...) -> None: ...

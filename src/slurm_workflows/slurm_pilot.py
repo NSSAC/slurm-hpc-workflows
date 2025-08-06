@@ -4,6 +4,7 @@ from __future__ import annotations, generator_stop
 
 import os
 import time
+import math
 import json
 import heapq
 import pickle
@@ -20,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from typing import Callable, Iterable, Any
 
 import tqdm
+import polars as pl
 import grpc
 import click
 import platformdirs
@@ -153,6 +155,8 @@ class PilotProcess:
         self._stub.SetTaskResult(result)
 
     def do_run_task(self, task: TaskDefn) -> TaskResult:
+        start_time = time.perf_counter()
+        os.environ["PILOT_TASK_ID"] = task.task_id
         try:
             function = cloudpickle.loads(task.function)
             args = cloudpickle.loads(task.args)
@@ -165,6 +169,7 @@ class PilotProcess:
                 task_success=True,
                 return_=return_,
                 process_id=self._process_id,
+                runtime=time.perf_counter() - start_time,
             )
         except Exception as e:
             eid = gen_error_id()
@@ -175,6 +180,7 @@ class PilotProcess:
                 error=f"{type(e)}: {e}",
                 error_id=eid,
                 process_id=self._process_id,
+                runtime=time.perf_counter() - start_time,
             )
 
         return result
@@ -237,10 +243,20 @@ class TaskMeta:
     priority: float = field(compare=True)
     types: list[str] = field(compare=False)
     is_assigned: bool = field(compare=False, default=False)
+    queue_time: float = field(compare=False, default_factory=time.perf_counter)
+    run_time: float = field(compare=False, default=float("nan"))
+    wait_time: float = field(compare=False, default=float("inf"))
 
     @property
     def id(self) -> str:
         return self.defn.task_id
+
+    def update_wait_time(self):
+        w = time.perf_counter() - self.queue_time
+        if math.isfinite(self.wait_time):
+            self.wait_time += w
+        else:
+            self.wait_time = w
 
 
 @dataclass
@@ -256,6 +272,7 @@ class TaskQueue:
             task = heapq.heappop(self.queue)
             if not task.is_assigned:
                 task.is_assigned = True
+                task.update_wait_time()
                 return task
 
         return None
@@ -274,8 +291,9 @@ class Worker:
     slurm_job: SlurmJob
     exit_flag: bool = False
     is_running: bool = True
-    processes: dict[str, WorkerProcess] = field(default_factory=dict)
     is_new: bool = True
+    processes: dict[str, WorkerProcess] = field(default_factory=dict)
+    submit_time: float = field(default_factory=time.perf_counter)
 
     def has_active_processes(self) -> bool:
         return len(self.processes) > 0
@@ -303,6 +321,74 @@ def _map_chunk(fn: Callable, args_list: list):
     for args in args_list:
         results.append(fn(*args))
     return results
+
+
+@dataclass
+class Metrics:
+    start_time: float = float("nan")
+    stop_time: float = float("nan")
+    queue_access_time_total: float = 0.0
+    queue_access_time_min: float = float("inf")
+    queue_access_time_max: float = 0.0
+    queue_access_count: int = 0
+    process_init_time: dict[str, tuple[str, float]] = field(default_factory=dict)
+    task_wait_time: dict[str, float] = field(default_factory=dict)
+    task_run_time: dict[str, tuple[str, str, float]] = field(default_factory=dict)
+
+    @property
+    def queue_access_time_mean(self) -> float:
+        return self.queue_access_time_total / self.queue_access_count
+
+    def update_queue_access_time(self, time: float):
+        self.queue_access_time_total += time
+        self.queue_access_time_min = min(time, self.queue_access_time_min)
+        self.queue_access_time_max = max(time, self.queue_access_time_max)
+        self.queue_access_count += 1
+
+    def process_init_time_df(self) -> pl.DataFrame:
+        pkey_list, type_list, time_list = [], [], []
+        for pkey, (type, time) in self.process_init_time.items():
+            pkey_list.append(pkey)
+            type_list.append(type)
+            time_list.append(time)
+        return pl.DataFrame(
+            {"process_key": pkey_list, "worker_type": type_list, "init_time": time_list}
+        )
+
+    def task_wait_time_df(self) -> pl.DataFrame:
+        tid_list, time_list = [], []
+        for tid, time in self.task_wait_time.items():
+            tid_list.append(tid)
+            time_list.append(time)
+        return pl.DataFrame(
+            {
+                "task_id": tid_list,
+                "wait_time": time_list,
+            }
+        )
+
+    def task_run_time_df(self) -> pl.DataFrame:
+        tid_list, pkey_list, type_list, time_list = [], [], [], []
+        for tid, (pkey, type, time) in self.task_run_time.items():
+            tid_list.append(tid)
+            pkey_list.append(pkey)
+            type_list.append(type)
+            time_list.append(time)
+        return pl.DataFrame(
+            {
+                "task_id": tid_list,
+                "process_key": pkey_list,
+                "worker_type": type_list,
+                "run_time": time_list,
+            }
+        )
+
+    def run_time(self) -> float:
+        return self.stop_time - self.start_time
+
+    def reset_task_data(self):
+        self.task_wait_time.clear()
+        self.task_run_time.clear()
 
 
 class SlurmPilotExecutor(CoordinatorServicer):
@@ -335,8 +421,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._server_address: str | None = None
         self._server: grpc.Server | None = None
 
+        self.metrics = Metrics()
+
     def _queue_task(self, task: TaskMeta):
         task.is_assigned = False
+        task.queue_time = time.perf_counter()
         for type in task.types:
             self._groups[type].task_queue.push(task)
 
@@ -652,6 +741,10 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     assert worker.processes[process_key] == process
                 else:
                     worker.processes[process_key] = process
+                    self.metrics.process_init_time[process_key] = (
+                        request.type,
+                        time.perf_counter() - worker.submit_time,
+                    )
 
                 return Empty()
         except Exception as e:
@@ -683,6 +776,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     def GetNextTask(
         self, request: WorkerProcessID, context: grpc.ServicerContext
     ) -> TaskAssignment:
+        start_time = time.perf_counter()
         try:
             with self._lock:
                 group = self._groups[request.type]
@@ -698,6 +792,9 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     )
                 else:
                     task = group.task_queue.pop()
+                    queue_access_time = time.perf_counter() - start_time
+                    self.metrics.update_queue_access_time(queue_access_time)
+
                     if task is not None:
                         process.running_task = task
                         return TaskAssignment(
@@ -728,6 +825,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 process = worker.processes[process_key]
                 assert process.running_task is not None
 
+                process.running_task.run_time = request.runtime
                 if request.task_success:
                     process.running_task.fut.set_result(
                         cloudpickle.loads(request.return_)
@@ -737,6 +835,15 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         "Error running task: %s: %s" % (request.error, request.error_id)
                     )
                     process.running_task.fut.set_exception(err)
+
+                self.metrics.task_wait_time[process.running_task.id] = (
+                    process.running_task.wait_time
+                )
+                self.metrics.task_run_time[process.running_task.id] = (
+                    request.process_id.type,
+                    request.process_id.name,
+                    process.running_task.run_time,
+                )
                 process.running_task = None
 
             return Empty()
@@ -750,7 +857,6 @@ class SlurmPilotExecutor(CoordinatorServicer):
     def start(self):
         assert self._queue_monitor_thread is None
         assert self._server is None
-
         self._exit_flag.clear()
         self._queue_monitor_thread = threading.Thread(target=self._queue_monitor_main)
         self._queue_monitor_thread.start()
@@ -774,10 +880,14 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._server.add_insecure_port(self._server_address)
         self._server.start()
 
+        self.metrics.start_time = time.perf_counter()
+
     def close(self):
         if self._server is not None:
             self._server.stop(None)
             self._server = None
+
+            self.metrics.stop_time = time.perf_counter()
 
         if self._queue_monitor_thread is not None:
             self._exit_flag.set()
