@@ -369,10 +369,10 @@ class Metrics:
 
     def task_run_time_df(self) -> pl.DataFrame:
         tid_list, pkey_list, type_list, time_list = [], [], [], []
-        for tid, (pkey, type, time) in self.task_run_time.items():
+        for tid, (type, pkey, time) in self.task_run_time.items():
             tid_list.append(tid)
-            pkey_list.append(pkey)
             type_list.append(type)
+            pkey_list.append(pkey)
             time_list.append(time)
         return pl.DataFrame(
             {
