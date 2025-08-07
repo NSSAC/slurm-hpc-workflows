@@ -16,9 +16,7 @@ srun /bin/bash '{{ worker_script_path }}'
 set -Eeuo pipefail
 set -x
 
-echo "Starting worker on $(hostname)"
-
-slurm-pilot-process \
+slurm-pilot-worker \
     --type '{{ type }}' \
     --name '{{ name }}' \
     --server-address '{{ server_address }}' \

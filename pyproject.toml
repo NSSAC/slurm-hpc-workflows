@@ -41,4 +41,4 @@ where = ["src"]
 
 [project.scripts]
 "run-jupyter" = "slurm_workflows.run_jupyter:run_jupyter"
-"slurm-pilot-process" = "slurm_workflows.slurm_pilot:slurm_pilot_process"
+"slurm-pilot-worker" = "slurm_workflows.slurm_pilot_worker:slurm_pilot_worker"
