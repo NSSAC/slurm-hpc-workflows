@@ -106,9 +106,9 @@ class PilotProcess:
         self._stub.SetTaskResult(result)
 
     def do_run_task(self, task: TaskDefn) -> TaskResult:
-        loads_input_duration = -1.0
-        run_duration = -1.0
-        dumps_output_duration = -1.0
+        loads_input_duration = float("nan")
+        run_duration = float("nan")
+        dumps_output_duration = float("nan")
         try:
             self._logger.info(
                 "task_id=%s: Deserializing function and inputs ...", task.task_id
