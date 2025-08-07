@@ -641,7 +641,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         task_id=process.running_task.id,
                         wait_duration=process.running_task.wait_duration,
                         type=request.process_id.type,
-                        process_key=request.process_id.name,
+                        process_key=process_key,
                         loads_input_duration=request.loads_input_duration,
                         run_duration=request.run_duration,
                         dumps_output_duration=request.dumps_output_duration,
