@@ -59,7 +59,7 @@ class PilotProcess:
                     {
                         "name": [{}],
                         "retryPolicy": {
-                            "maxAttempts": 100,
+                            "maxAttempts": 5,
                             "initialBackoff": "1s",
                             "maxBackoff": "15s",
                             "backoffMultiplier": 2,
@@ -78,7 +78,6 @@ class PilotProcess:
             # Retry stuff
             ("grpc.enable_retries", 1),
             ("grpc.service_config", client_service_config),
-            ("grpc-node.retry_max_attempts_limit", 100),
         ]
 
         self._channel = grpc.insecure_channel(self._server_address, options=options)
