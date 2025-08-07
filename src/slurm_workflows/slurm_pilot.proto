@@ -38,5 +38,7 @@ message TaskResult {
   string error = 4;
   string error_id = 5;
   WorkerProcessID process_id = 6;
-  double runtime = 7;
+  double loads_input_duration = 7;
+  double run_duration = 8;
+  double dumps_output_duration = 9;
 }

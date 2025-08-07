@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import json
+import pickle
 import socket
 import logging
 from pathlib import Path
@@ -105,21 +106,38 @@ class PilotProcess:
         self._stub.SetTaskResult(result)
 
     def do_run_task(self, task: TaskDefn) -> TaskResult:
-        start_time = time.perf_counter()
-        os.environ["PILOT_TASK_ID"] = task.task_id
+        loads_input_duration = -1.0
+        run_duration = -1.0
+        dumps_output_duration = -1.0
         try:
+            self._logger.info(
+                "task_id=%s: Deserializing function and inputs ...", task.task_id
+            )
+            start_time = time.perf_counter()
             function = cloudpickle.loads(task.function)
             args = cloudpickle.loads(task.args)
             kwargs = cloudpickle.loads(task.kwargs)
+            loads_input_duration = time.perf_counter() - start_time
 
+            self._logger.info("task_id=%s: Executing ...", task.task_id)
+            start_time = time.perf_counter()
             return_ = function(*args, **kwargs)
-            return_ = cloudpickle.dumps(return_)
+            run_duration = time.perf_counter() - start_time
+
+            self._logger.info("task_id=%s: Serializng output ...", task.task_id)
+            start_time = time.perf_counter()
+            return_ = cloudpickle.dumps(return_, protocol=pickle.HIGHEST_PROTOCOL)
+            dumps_output_duration = time.perf_counter() - start_time
+
+            self._logger.info("task_id=%s: Complete ...", task.task_id)
             result = TaskResult(
                 task_id=task.task_id,
                 task_success=True,
                 return_=return_,
                 process_id=self._process_id,
-                runtime=time.perf_counter() - start_time,
+                loads_input_duration=loads_input_duration,
+                run_duration=run_duration,
+                dumps_output_duration=dumps_output_duration,
             )
         except Exception as e:
             eid = gen_error_id()
@@ -130,7 +148,9 @@ class PilotProcess:
                 error=f"{type(e)}: {e}",
                 error_id=eid,
                 process_id=self._process_id,
-                runtime=time.perf_counter() - start_time,
+                loads_input_duration=loads_input_duration,
+                run_duration=run_duration,
+                dumps_output_duration=dumps_output_duration,
             )
 
         return result

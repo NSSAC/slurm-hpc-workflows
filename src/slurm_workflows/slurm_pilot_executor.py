@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-import math
 import heapq
 import pickle
 import logging
@@ -18,12 +17,12 @@ from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from typing import Callable, Iterable, Any
 
 import tqdm
-import polars as pl
 import grpc
 import platformdirs
 import cloudpickle
 from more_itertools import chunked
 from typeguard import typechecked
+from runstats import Statistics
 
 from .slurm_job_manager import (
     get_running_jobids,
@@ -57,12 +56,6 @@ def gen_error_id() -> str:
     )
 
 
-def gen_task_id() -> str:
-    return f"TASK_" + "".join(
-        random.choices(string.ascii_lowercase + string.digits, k=32)
-    )
-
-
 @typechecked
 def wait_with_progress(
     futs: list[Future], desc: str | None = None, unit: str = "it"
@@ -80,20 +73,15 @@ class TaskMeta:
     priority: float = field(compare=True)
     types: list[str] = field(compare=False)
     is_assigned: bool = field(compare=False, default=False)
-    queue_time: float = field(compare=False, default_factory=time.perf_counter)
-    run_time: float = field(compare=False, default=float("nan"))
-    wait_time: float = field(compare=False, default=float("inf"))
+    submit_time: float = field(compare=False, default_factory=time.perf_counter)
+    wait_duration: float = field(compare=False, default=float("inf"))
 
     @property
     def id(self) -> str:
         return self.defn.task_id
 
-    def update_wait_time(self):
-        w = time.perf_counter() - self.queue_time
-        if math.isfinite(self.wait_time):
-            self.wait_time += w
-        else:
-            self.wait_time = w
+    def update_wait_duration(self):
+        self.wait_duration = time.perf_counter() - self.submit_time
 
 
 @dataclass
@@ -109,7 +97,7 @@ class TaskQueue:
             task = heapq.heappop(self.queue)
             if not task.is_assigned:
                 task.is_assigned = True
-                task.update_wait_time()
+                task.update_wait_duration()
                 return task
 
         return None
@@ -160,72 +148,34 @@ def _map_chunk(fn: Callable, args_list: list):
     return results
 
 
+@dataclass(slots=True)
+class ProcessMetrics:
+    process_key: str
+    type: str
+    init_duration: float
+
+
+@dataclass(slots=True)
+class TaskMetrics:
+    task_id: str
+    wait_duration: float
+    type: str
+    process_key: str
+    loads_input_duration: float
+    run_duration: float
+    dumps_output_duration: float
+
+
 @dataclass
 class Metrics:
     start_time: float = float("nan")
     stop_time: float = float("nan")
-    queue_access_time_total: float = 0.0
-    queue_access_time_min: float = float("inf")
-    queue_access_time_max: float = 0.0
-    queue_access_count: int = 0
-    process_init_time: dict[str, tuple[str, float]] = field(default_factory=dict)
-    task_wait_time: dict[str, float] = field(default_factory=dict)
-    task_run_time: dict[str, tuple[str, str, float]] = field(default_factory=dict)
-
-    @property
-    def queue_access_time_mean(self) -> float:
-        return self.queue_access_time_total / self.queue_access_count
-
-    def update_queue_access_time(self, time: float):
-        self.queue_access_time_total += time
-        self.queue_access_time_min = min(time, self.queue_access_time_min)
-        self.queue_access_time_max = max(time, self.queue_access_time_max)
-        self.queue_access_count += 1
-
-    def process_init_time_df(self) -> pl.DataFrame:
-        pkey_list, type_list, time_list = [], [], []
-        for pkey, (type, time) in self.process_init_time.items():
-            pkey_list.append(pkey)
-            type_list.append(type)
-            time_list.append(time)
-        return pl.DataFrame(
-            {"process_key": pkey_list, "worker_type": type_list, "init_time": time_list}
-        )
-
-    def task_wait_time_df(self) -> pl.DataFrame:
-        tid_list, time_list = [], []
-        for tid, time in self.task_wait_time.items():
-            tid_list.append(tid)
-            time_list.append(time)
-        return pl.DataFrame(
-            {
-                "task_id": tid_list,
-                "wait_time": time_list,
-            }
-        )
-
-    def task_run_time_df(self) -> pl.DataFrame:
-        tid_list, pkey_list, type_list, time_list = [], [], [], []
-        for tid, (type, pkey, time) in self.task_run_time.items():
-            tid_list.append(tid)
-            type_list.append(type)
-            pkey_list.append(pkey)
-            time_list.append(time)
-        return pl.DataFrame(
-            {
-                "task_id": tid_list,
-                "process_key": pkey_list,
-                "worker_type": type_list,
-                "run_time": time_list,
-            }
-        )
+    queue_access_duration: Statistics = field(default_factory=Statistics)
+    process_metrics: list[ProcessMetrics] = field(default_factory=list)
+    task_metrics: list[TaskMetrics] = field(default_factory=list)
 
     def run_time(self) -> float:
         return self.stop_time - self.start_time
-
-    def reset_task_data(self):
-        self.task_wait_time.clear()
-        self.task_run_time.clear()
 
 
 class SlurmPilotExecutor(CoordinatorServicer):
@@ -262,7 +212,6 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
     def _queue_task(self, task: TaskMeta):
         task.is_assigned = False
-        task.queue_time = time.perf_counter()
         for type in task.types:
             self._groups[type].task_queue.push(task)
 
@@ -478,9 +427,14 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         to_retire -= 1
 
     def _submit(
-        self, types: list[str], priority: float, fn: Callable, *args, **kwargs
+        self,
+        task_id: str,
+        types: list[str],
+        priority: float,
+        fn: Callable,
+        *args,
+        **kwargs,
     ) -> Future:
-        task_id = gen_task_id()
         defn = TaskDefn(
             task_id=task_id,
             function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
@@ -495,18 +449,21 @@ class SlurmPilotExecutor(CoordinatorServicer):
         return task.fut
 
     @typechecked
-    def submit(self, type: str | list[str], fn: Callable, *args, **kwargs) -> Future:
+    def submit(
+        self, task_id: str, type: str | list[str], fn: Callable, *args, **kwargs
+    ) -> Future:
         if isinstance(type, str):
             types = [type]
         else:
             types = type
         priority = time.perf_counter()
 
-        return self._submit(types, priority, fn, *args, **kwargs)
+        return self._submit(task_id, types, priority, fn, *args, **kwargs)
 
     @typechecked
     def map(
         self,
+        task_id: str,
         type: str | list[str],
         fn: Callable,
         *iterables: Iterable,
@@ -522,8 +479,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
         futs: list[Future] = []
         args_list_chunks = chunked(zip(*iterables), chunksize)
-        for arg_list_chunk in args_list_chunks:
-            futs.append(self._submit(types, priority, _map_chunk, fn, arg_list_chunk))
+        for i, arg_list_chunk in enumerate(args_list_chunks, 1):
+            tid = f"{task_id}:chunk-{i}"
+            futs.append(
+                self._submit(tid, types, priority, _map_chunk, fn, arg_list_chunk)
+            )
 
         it = as_completed(futs)
         it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
@@ -578,9 +538,12 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     assert worker.processes[process_key] == process
                 else:
                     worker.processes[process_key] = process
-                    self.metrics.process_init_time[process_key] = (
-                        request.type,
-                        time.perf_counter() - worker.submit_time,
+                    self.metrics.process_metrics.append(
+                        ProcessMetrics(
+                            process_key=process_key,
+                            type=request.type,
+                            init_duration=time.perf_counter() - worker.submit_time,
+                        )
                     )
 
                 return Empty()
@@ -629,8 +592,9 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     )
                 else:
                     task = group.task_queue.pop()
-                    queue_access_time = time.perf_counter() - start_time
-                    self.metrics.update_queue_access_time(queue_access_time)
+                    self.metrics.queue_access_duration.push(
+                        time.perf_counter() - start_time
+                    )
 
                     if task is not None:
                         process.running_task = task
@@ -662,7 +626,6 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 process = worker.processes[process_key]
                 assert process.running_task is not None
 
-                process.running_task.run_time = request.runtime
                 if request.task_success:
                     process.running_task.fut.set_result(
                         cloudpickle.loads(request.return_)
@@ -673,13 +636,16 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     )
                     process.running_task.fut.set_exception(err)
 
-                self.metrics.task_wait_time[process.running_task.id] = (
-                    process.running_task.wait_time
-                )
-                self.metrics.task_run_time[process.running_task.id] = (
-                    request.process_id.type,
-                    request.process_id.name,
-                    process.running_task.run_time,
+                self.metrics.task_metrics.append(
+                    TaskMetrics(
+                        task_id=process.running_task.id,
+                        wait_duration=process.running_task.wait_duration,
+                        type=request.process_id.type,
+                        process_key=request.process_id.name,
+                        loads_input_duration=request.loads_input_duration,
+                        run_duration=request.run_duration,
+                        dumps_output_duration=request.dumps_output_duration,
+                    )
                 )
                 process.running_task = None
 
