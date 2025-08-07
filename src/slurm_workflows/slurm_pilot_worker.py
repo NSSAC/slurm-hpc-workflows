@@ -1,6 +1,7 @@
 """Pilot workers for Slurm pilot."""
 
 import os
+import sys
 import time
 import json
 import socket
@@ -168,18 +169,27 @@ def slurm_pilot_worker(type: str, name: str, server_address: str, work_dir: Path
     hostname = socket.gethostname()
     pid = os.getpid()
     log_file = work_dir / f"{name}-{slurm_job_id}-{hostname}-{pid}.log"
-    logging.basicConfig(filename=log_file, format=LOG_FORMAT, level=LOG_LEVEL)
 
-    os.environ["PILOT_PROCESS_NAME"] = name
-    os.environ["PILOT_PROCESS_TYPE"] = type
+    print(f"Redirecting standard output and standard error to {log_file}")
+    sys.stdout.flush()
+    sys.stderr.flush()
 
-    worker = PilotProcess(
-        type=type,
-        name=name,
-        server_address=server_address,
-        work_dir=work_dir,
-        slurm_job_id=slurm_job_id,
-        hostname=hostname,
-        pid=pid,
-    )
-    worker.main()
+    with open(log_file, "wt") as fout:
+        sys.stdout = fout
+        sys.stderr = fout
+
+        logging.basicConfig(stream=fout, format=LOG_FORMAT, level=LOG_LEVEL)
+
+        os.environ["PILOT_PROCESS_NAME"] = name
+        os.environ["PILOT_PROCESS_TYPE"] = type
+
+        worker = PilotProcess(
+            type=type,
+            name=name,
+            server_address=server_address,
+            work_dir=work_dir,
+            slurm_job_id=slurm_job_id,
+            hostname=hostname,
+            pid=pid,
+        )
+        worker.main()
