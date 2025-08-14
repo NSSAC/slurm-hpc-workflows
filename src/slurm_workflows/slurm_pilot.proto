@@ -20,25 +20,33 @@ message WorkerProcessID {
 
 message TaskDefn {
   string task_id = 1;
-  bytes function = 2;
-  bytes args = 3;
-  bytes kwargs = 4;
+  FunctionCall function_call = 2;
+}
+
+message FunctionCall {
+  bytes function = 1;
+  bytes args = 2;
+  bytes kwargs = 3;
 }
 
 message TaskAssignment {
   bool exit_flag = 1;
-  bool task_available = 2;
-  TaskDefn task = 3;
+  TaskDefn task = 2;
 }
 
 message TaskResult {
   string task_id = 1;
-  bool task_success = 2;
-  bytes return_ = 3;
-  string error = 4;
-  string error_id = 5;
-  WorkerProcessID process_id = 6;
-  double loads_input_duration = 7;
-  double run_duration = 8;
-  double dumps_output_duration = 9;
+  oneof result {
+    bytes retval = 2;
+    Error error = 3;
+  }
+  WorkerProcessID process_id = 4;
+  double loads_input_duration = 5;
+  double run_duration = 6;
+  double dumps_output_duration = 7;
+}
+
+message Error {
+  string message = 1;
+  string error_id = 2;
 }

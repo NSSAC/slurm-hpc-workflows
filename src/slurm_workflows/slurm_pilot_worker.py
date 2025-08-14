@@ -18,6 +18,7 @@ from .slurm_pilot_pb2 import (
     TaskDefn,
     TaskAssignment,
     TaskResult,
+    Error,
 )
 from .slurm_pilot_pb2_grpc import (
     CoordinatorStub,
@@ -97,7 +98,7 @@ class PilotProcess:
         if assignment.exit_flag:
             self._exit_flag = True
             return None
-        elif assignment.task_available:
+        elif assignment.HasField("task"):
             return assignment.task
         return None
 
@@ -113,26 +114,25 @@ class PilotProcess:
                 "task_id=%s: Deserializing function and inputs ...", task.task_id
             )
             start_time = time.perf_counter()
-            function = cloudpickle.loads(task.function)
-            args = cloudpickle.loads(task.args)
-            kwargs = cloudpickle.loads(task.kwargs)
+            function = cloudpickle.loads(task.function_call.function)
+            args = cloudpickle.loads(task.function_call.args)
+            kwargs = cloudpickle.loads(task.function_call.kwargs)
             loads_input_duration = time.perf_counter() - start_time
 
             self._logger.info("task_id=%s: Executing ...", task.task_id)
             start_time = time.perf_counter()
-            return_ = function(*args, **kwargs)
+            retval = function(*args, **kwargs)
             run_duration = time.perf_counter() - start_time
 
             self._logger.info("task_id=%s: Serializng output ...", task.task_id)
             start_time = time.perf_counter()
-            return_ = cloudpickle.dumps(return_, protocol=pickle.HIGHEST_PROTOCOL)
+            retval = cloudpickle.dumps(retval, protocol=pickle.HIGHEST_PROTOCOL)
             dumps_output_duration = time.perf_counter() - start_time
 
             self._logger.info("task_id=%s: Complete ...", task.task_id)
             result = TaskResult(
                 task_id=task.task_id,
-                task_success=True,
-                return_=return_,
+                retval=retval,
                 process_id=self._process_id,
                 loads_input_duration=loads_input_duration,
                 run_duration=run_duration,
@@ -143,9 +143,10 @@ class PilotProcess:
             self._logger.exception("Error executing %s: %s: %s", task.task_id, eid, e)
             result = TaskResult(
                 task_id=task.task_id,
-                task_success=False,
-                error=f"{type(e)}: {e}",
-                error_id=eid,
+                error=Error(
+                    message=f"{type(e)}: {e}",
+                    error_id=eid,
+                ),
                 process_id=self._process_id,
                 loads_input_duration=loads_input_duration,
                 run_duration=run_duration,

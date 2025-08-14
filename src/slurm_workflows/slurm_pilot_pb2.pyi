@@ -24,45 +24,53 @@ class WorkerProcessID(_message.Message):
     def __init__(self, type: _Optional[str] = ..., name: _Optional[str] = ..., slurm_job_id: _Optional[int] = ..., hostname: _Optional[str] = ..., pid: _Optional[int] = ...) -> None: ...
 
 class TaskDefn(_message.Message):
-    __slots__ = ("task_id", "function", "args", "kwargs")
+    __slots__ = ("task_id", "function_call")
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
+    FUNCTION_CALL_FIELD_NUMBER: _ClassVar[int]
+    task_id: str
+    function_call: FunctionCall
+    def __init__(self, task_id: _Optional[str] = ..., function_call: _Optional[_Union[FunctionCall, _Mapping]] = ...) -> None: ...
+
+class FunctionCall(_message.Message):
+    __slots__ = ("function", "args", "kwargs")
     FUNCTION_FIELD_NUMBER: _ClassVar[int]
     ARGS_FIELD_NUMBER: _ClassVar[int]
     KWARGS_FIELD_NUMBER: _ClassVar[int]
-    task_id: str
     function: bytes
     args: bytes
     kwargs: bytes
-    def __init__(self, task_id: _Optional[str] = ..., function: _Optional[bytes] = ..., args: _Optional[bytes] = ..., kwargs: _Optional[bytes] = ...) -> None: ...
+    def __init__(self, function: _Optional[bytes] = ..., args: _Optional[bytes] = ..., kwargs: _Optional[bytes] = ...) -> None: ...
 
 class TaskAssignment(_message.Message):
-    __slots__ = ("exit_flag", "task_available", "task")
+    __slots__ = ("exit_flag", "task")
     EXIT_FLAG_FIELD_NUMBER: _ClassVar[int]
-    TASK_AVAILABLE_FIELD_NUMBER: _ClassVar[int]
     TASK_FIELD_NUMBER: _ClassVar[int]
     exit_flag: bool
-    task_available: bool
     task: TaskDefn
-    def __init__(self, exit_flag: bool = ..., task_available: bool = ..., task: _Optional[_Union[TaskDefn, _Mapping]] = ...) -> None: ...
+    def __init__(self, exit_flag: bool = ..., task: _Optional[_Union[TaskDefn, _Mapping]] = ...) -> None: ...
 
 class TaskResult(_message.Message):
-    __slots__ = ("task_id", "task_success", "return_", "error", "error_id", "process_id", "loads_input_duration", "run_duration", "dumps_output_duration")
+    __slots__ = ("task_id", "retval", "error", "process_id", "loads_input_duration", "run_duration", "dumps_output_duration")
     TASK_ID_FIELD_NUMBER: _ClassVar[int]
-    TASK_SUCCESS_FIELD_NUMBER: _ClassVar[int]
-    RETURN__FIELD_NUMBER: _ClassVar[int]
+    RETVAL_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
-    ERROR_ID_FIELD_NUMBER: _ClassVar[int]
     PROCESS_ID_FIELD_NUMBER: _ClassVar[int]
     LOADS_INPUT_DURATION_FIELD_NUMBER: _ClassVar[int]
     RUN_DURATION_FIELD_NUMBER: _ClassVar[int]
     DUMPS_OUTPUT_DURATION_FIELD_NUMBER: _ClassVar[int]
     task_id: str
-    task_success: bool
-    return_: bytes
-    error: str
-    error_id: str
+    retval: bytes
+    error: Error
     process_id: WorkerProcessID
     loads_input_duration: float
     run_duration: float
     dumps_output_duration: float
-    def __init__(self, task_id: _Optional[str] = ..., task_success: bool = ..., return_: _Optional[bytes] = ..., error: _Optional[str] = ..., error_id: _Optional[str] = ..., process_id: _Optional[_Union[WorkerProcessID, _Mapping]] = ..., loads_input_duration: _Optional[float] = ..., run_duration: _Optional[float] = ..., dumps_output_duration: _Optional[float] = ...) -> None: ...
+    def __init__(self, task_id: _Optional[str] = ..., retval: _Optional[bytes] = ..., error: _Optional[_Union[Error, _Mapping]] = ..., process_id: _Optional[_Union[WorkerProcessID, _Mapping]] = ..., loads_input_duration: _Optional[float] = ..., run_duration: _Optional[float] = ..., dumps_output_duration: _Optional[float] = ...) -> None: ...
+
+class Error(_message.Message):
+    __slots__ = ("message", "error_id")
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_ID_FIELD_NUMBER: _ClassVar[int]
+    message: str
+    error_id: str
+    def __init__(self, message: _Optional[str] = ..., error_id: _Optional[str] = ...) -> None: ...

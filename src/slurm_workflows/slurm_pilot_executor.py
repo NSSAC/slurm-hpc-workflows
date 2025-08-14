@@ -36,6 +36,7 @@ from .slurm_pilot_pb2 import (
     TaskDefn,
     TaskAssignment,
     TaskResult,
+    FunctionCall,
 )
 from .slurm_pilot_pb2_grpc import (
     CoordinatorServicer,
@@ -437,9 +438,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
     ) -> Future:
         defn = TaskDefn(
             task_id=task_id,
-            function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
-            args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
-            kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
+            function_call=FunctionCall(
+                function=cloudpickle.dumps(fn, protocol=pickle.HIGHEST_PROTOCOL),
+                args=cloudpickle.dumps(args, protocol=pickle.HIGHEST_PROTOCOL),
+                kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
+            ),
         )
         task = TaskMeta(defn=defn, fut=Future(), priority=priority, types=types)
 
@@ -588,7 +591,6 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 if worker.exit_flag:
                     return TaskAssignment(
                         exit_flag=worker.exit_flag,
-                        task_available=False,
                     )
                 else:
                     task = group.task_queue.pop()
@@ -600,13 +602,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
                         process.running_task = task
                         return TaskAssignment(
                             exit_flag=worker.exit_flag,
-                            task_available=True,
                             task=task.defn,
                         )
                     else:
                         return TaskAssignment(
                             exit_flag=worker.exit_flag,
-                            task_available=False,
                         )
         except Exception as e:
             eid = gen_error_id()
@@ -626,13 +626,16 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 process = worker.processes[process_key]
                 assert process.running_task is not None
 
-                if request.task_success:
+                if request.HasField("retval"):
                     process.running_task.fut.set_result(
-                        cloudpickle.loads(request.return_)
+                        cloudpickle.loads(request.retval)
                     )
                 else:
+                    assert request.HasField("error")
+
                     err = RuntimeError(
-                        "Error running task: %s: %s" % (request.error, request.error_id)
+                        "Error running task: %s: %s"
+                        % (request.error.message, request.error.error_id)
                     )
                     process.running_task.fut.set_exception(err)
 
