@@ -20,9 +20,7 @@ from .slurm_pilot_pb2 import (
     TaskResult,
     Error,
 )
-from .slurm_pilot_pb2_grpc import (
-    CoordinatorStub,
-)
+from .slurm_pilot_pb2_grpc import CoordinatorStub
 from .slurm_pilot_executor import gen_error_id
 
 NEXT_TASK_RETRY_TIME_S: float = 1.0
@@ -33,7 +31,7 @@ LOG_LEVEL = logging.INFO
 class PilotProcess:
     def __init__(
         self,
-        type: str,
+        group: str,
         name: str,
         server_address: str,
         work_dir: Path,
@@ -42,7 +40,7 @@ class PilotProcess:
         pid: int,
     ):
         self._process_id = WorkerProcessID(
-            type=type,
+            group=group,
             name=name,
             slurm_job_id=slurm_job_id,
             hostname=hostname,
@@ -174,7 +172,7 @@ class PilotProcess:
 
 
 @click.command()
-@click.option("--type", type=str, required=True, help="Worker type")
+@click.option("--group", type=str, required=True, help="Worker group")
 @click.option("--name", type=str, required=True, help="Worker job name")
 @click.option("--server-address", type=str, required=True, help="Pilot server address")
 @click.option(
@@ -183,7 +181,7 @@ class PilotProcess:
     required=True,
     help="Work directory",
 )
-def slurm_pilot_worker(type: str, name: str, server_address: str, work_dir: Path):
+def slurm_pilot_worker(group: str, name: str, server_address: str, work_dir: Path):
     """Start a slurm pilot worker."""
     slurm_job_id = int(os.environ.get("SLURM_JOB_ID", -1))
     hostname = socket.gethostname()
@@ -200,11 +198,11 @@ def slurm_pilot_worker(type: str, name: str, server_address: str, work_dir: Path
 
         logging.basicConfig(stream=fout, format=LOG_FORMAT, level=LOG_LEVEL)
 
-        os.environ["PILOT_PROCESS_NAME"] = name
-        os.environ["PILOT_PROCESS_TYPE"] = type
+        os.environ["PILOT_WORKER_NAME"] = name
+        os.environ["PILOT_WORKER_GROUP"] = group
 
         worker = PilotProcess(
-            type=type,
+            group=group,
             name=name,
             server_address=server_address,
             work_dir=work_dir,

@@ -10,18 +10,18 @@ class Empty(_message.Message):
     def __init__(self) -> None: ...
 
 class WorkerProcessID(_message.Message):
-    __slots__ = ("type", "name", "slurm_job_id", "hostname", "pid")
-    TYPE_FIELD_NUMBER: _ClassVar[int]
+    __slots__ = ("group", "name", "slurm_job_id", "hostname", "pid")
+    GROUP_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     SLURM_JOB_ID_FIELD_NUMBER: _ClassVar[int]
     HOSTNAME_FIELD_NUMBER: _ClassVar[int]
     PID_FIELD_NUMBER: _ClassVar[int]
-    type: str
+    group: str
     name: str
     slurm_job_id: int
     hostname: str
     pid: int
-    def __init__(self, type: _Optional[str] = ..., name: _Optional[str] = ..., slurm_job_id: _Optional[int] = ..., hostname: _Optional[str] = ..., pid: _Optional[int] = ...) -> None: ...
+    def __init__(self, group: _Optional[str] = ..., name: _Optional[str] = ..., slurm_job_id: _Optional[int] = ..., hostname: _Optional[str] = ..., pid: _Optional[int] = ...) -> None: ...
 
 class TaskDefn(_message.Message):
     __slots__ = ("task_id", "function_call")

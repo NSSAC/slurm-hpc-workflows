@@ -11,7 +11,7 @@ service Coordinator {
 message Empty {}
 
 message WorkerProcessID {
-  string type = 1;
+  string group = 1;
   string name = 2;
   int64 slurm_job_id = 3;
   string hostname = 4;

@@ -17,7 +17,7 @@ set -Eeuo pipefail
 set -x
 
 slurm-pilot-worker \
-    --type '{{ type }}' \
+    --group '{{ group }}' \
     --name '{{ name }}' \
     --server-address '{{ server_address }}' \
     --work-dir '{{ work_dir }}'

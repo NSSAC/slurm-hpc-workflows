@@ -72,7 +72,7 @@ class TaskMeta:
     defn: TaskDefn = field(compare=False)
     fut: Future = field(compare=False)
     priority: float = field(compare=True)
-    types: list[str] = field(compare=False)
+    groups: list[str] = field(compare=False)
     is_assigned: bool = field(compare=False, default=False)
     submit_time: float = field(compare=False, default_factory=time.perf_counter)
     wait_duration: float = field(compare=False, default=float("inf"))
@@ -130,7 +130,7 @@ class Worker:
 
 @dataclass
 class WorkerGroup:
-    type: str
+    name: str
     sbatch_args: list[str]
     is_batch_worker: bool
     workers: dict[str, Worker] = field(default_factory=dict)
@@ -152,7 +152,7 @@ def _map_chunk(fn: Callable, args_list: list):
 @dataclass(slots=True)
 class ProcessMetrics:
     process_key: str
-    type: str
+    group: str
     init_duration: float
 
 
@@ -160,7 +160,7 @@ class ProcessMetrics:
 class TaskMetrics:
     task_id: str
     wait_duration: float
-    type: str
+    group: str
     process_key: str
     loads_input_duration: float
     run_duration: float
@@ -213,8 +213,8 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
     def _queue_task(self, task: TaskMeta):
         task.is_assigned = False
-        for type in task.types:
-            self._groups[type].task_queue.push(task)
+        for group in task.groups:
+            self._groups[group].task_queue.push(task)
 
     def _cleanup_process(self, worker: Worker, process: WorkerProcess):
         if process.running_task is not None:
@@ -322,28 +322,28 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
     @typechecked
     def define_worker(
-        self, type: str, sbatch_args: list[str], is_batch_worker: bool = False
+        self, name: str, sbatch_args: list[str], is_batch_worker: bool = False
     ) -> None:
         with self._lock:
             group = WorkerGroup(
-                type=type, sbatch_args=sbatch_args, is_batch_worker=is_batch_worker
+                name=name, sbatch_args=sbatch_args, is_batch_worker=is_batch_worker
             )
 
-            if group.type in self._groups:
-                assert self._groups[group.type] == group
+            if group.name in self._groups:
+                assert self._groups[group.name] == group
             else:
-                self._groups[group.type] = group
+                self._groups[group.name] = group
 
     def _add_worker(self, group: WorkerGroup) -> None:
         assert self._server_address is not None
 
         worker_index = group.next_worker_index
         group.next_worker_index += 1
-        name = f"slurm_pilot_worker.{group.type}.{worker_index}"
+        name = f"slurm_pilot_worker.{group.name}.{worker_index}"
 
         worker_script = render_template(
             "slurm_pilot:worker_script",
-            type=group.type,
+            group=group.name,
             name=name,
             server_address=self._server_address,
             work_dir=str(self.work_dir),
@@ -377,11 +377,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
             raise cp
 
     @typechecked
-    def scale_workers(self, type: str, count: int) -> None:
+    def scale_workers(self, name: str, count: int) -> None:
         with self._lock:
-            assert type in self._groups, "Unknown worker type"
+            assert name in self._groups, "Unknown worker type"
 
-            group = self._groups[type]
+            group = self._groups[name]
             if len(group.workers) < count:
                 to_hire = count - len(group.workers)
                 for _ in range(to_hire):
@@ -430,7 +430,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     def _submit(
         self,
         task_id: str,
-        types: list[str],
+        groups: list[str],
         priority: float,
         fn: Callable,
         *args,
@@ -444,7 +444,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 kwargs=cloudpickle.dumps(kwargs, protocol=pickle.HIGHEST_PROTOCOL),
             ),
         )
-        task = TaskMeta(defn=defn, fut=Future(), priority=priority, types=types)
+        task = TaskMeta(defn=defn, fut=Future(), priority=priority, groups=groups)
 
         with self._lock:
             self._queue_task(task)
@@ -453,31 +453,31 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
     @typechecked
     def submit(
-        self, task_id: str, type: str | list[str], fn: Callable, *args, **kwargs
+        self, task_id: str, group: str | list[str], fn: Callable, *args, **kwargs
     ) -> Future:
-        if isinstance(type, str):
-            types = [type]
+        if isinstance(group, str):
+            groups = [group]
         else:
-            types = type
+            groups = group
         priority = time.perf_counter()
 
-        return self._submit(task_id, types, priority, fn, *args, **kwargs)
+        return self._submit(task_id, groups, priority, fn, *args, **kwargs)
 
     @typechecked
     def map(
         self,
         task_id: str,
-        type: str | list[str],
+        group: str | list[str],
         fn: Callable,
         *iterables: Iterable,
         chunksize: int = 1,
         unit: str = "it",
         desc: str | None = None,
     ) -> list[Any]:
-        if isinstance(type, str):
-            types = [type]
+        if isinstance(group, str):
+            groups = [group]
         else:
-            types = type
+            groups = group
         priority = time.perf_counter()
 
         futs: list[Future] = []
@@ -485,7 +485,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
         for i, arg_list_chunk in enumerate(args_list_chunks, 1):
             tid = f"{task_id}:chunk-{i}"
             futs.append(
-                self._submit(tid, types, priority, _map_chunk, fn, arg_list_chunk)
+                self._submit(tid, groups, priority, _map_chunk, fn, arg_list_chunk)
             )
 
         it = as_completed(futs)
@@ -506,7 +506,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     def num_workers(self, detail: bool = False):
         with self._lock:
             if detail:
-                return {g.type: len(g.workers) for g in self._groups.values()}
+                return {g.name: len(g.workers) for g in self._groups.values()}
             else:
                 return sum(len(g.workers) for g in self._groups.values())
 
@@ -514,7 +514,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
         with self._lock:
             if detail:
                 return {
-                    g.type: {w.name: len(w.processes) for w in g.workers.values()}
+                    g.name: {w.name: len(w.processes) for w in g.workers.values()}
                     for g in self._groups.values()
                 }
             else:
@@ -529,7 +529,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     ) -> Empty:
         try:
             with self._lock:
-                group = self._groups[request.type]
+                group = self._groups[request.group]
                 worker = group.workers[request.name]
                 process_key = f"{request.slurm_job_id}:{request.hostname}:{request.pid}"
                 process = WorkerProcess(
@@ -544,7 +544,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     self.metrics.process_metrics.append(
                         ProcessMetrics(
                             process_key=process_key,
-                            type=request.type,
+                            group=request.group,
                             init_duration=time.perf_counter() - worker.submit_time,
                         )
                     )
@@ -562,7 +562,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     ) -> Empty:
         try:
             with self._lock:
-                group = self._groups[request.type]
+                group = self._groups[request.group]
                 worker = group.workers[request.name]
                 process_key = f"{request.slurm_job_id}:{request.hostname}:{request.pid}"
                 process = worker.processes[process_key]
@@ -582,7 +582,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
         start_time = time.perf_counter()
         try:
             with self._lock:
-                group = self._groups[request.type]
+                group = self._groups[request.group]
                 worker = group.workers[request.name]
                 process_key = f"{request.slurm_job_id}:{request.hostname}:{request.pid}"
                 process = worker.processes[process_key]
@@ -620,7 +620,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
     ) -> Empty:
         try:
             with self._lock:
-                group = self._groups[request.process_id.type]
+                group = self._groups[request.process_id.group]
                 worker = group.workers[request.process_id.name]
                 process_key = f"{request.process_id.slurm_job_id}:{request.process_id.hostname}:{request.process_id.pid}"
                 process = worker.processes[process_key]
@@ -643,7 +643,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                     TaskMetrics(
                         task_id=process.running_task.id,
                         wait_duration=process.running_task.wait_duration,
-                        type=request.process_id.type,
+                        group=request.process_id.group,
                         process_key=process_key,
                         loads_input_duration=request.loads_input_duration,
                         run_duration=request.run_duration,
