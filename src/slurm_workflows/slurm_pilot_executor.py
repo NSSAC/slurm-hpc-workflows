@@ -293,18 +293,18 @@ class SlurmPilotExecutor(CoordinatorServicer):
         if job_ids is None:
             return
 
-        still_running_job_ids: list[int] = []
+        to_cancel_jobs: list[int] = []
         with self._lock:
             for group in self._groups.values():
                 for name in list(group.workers):
                     worker = group.workers[name]
                     if worker.slurm_job.job_id in job_ids:
-                        still_running_job_ids.append(worker.slurm_job.job_id)
+                        to_cancel_jobs.append(worker.slurm_job.job_id)
                     self._cleanup_worker(group, worker)
 
-        if still_running_job_ids:
+        if to_cancel_jobs:
             try:
-                cancel_jobs(still_running_job_ids)
+                cancel_jobs(to_cancel_jobs)
             except subprocess.CalledProcessError as cp:
                 print(f"Failed to cancel slurm jobs: returncode={cp.returncode}")
                 if cp.stdout.strip():
