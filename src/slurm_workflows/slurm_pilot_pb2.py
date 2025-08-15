@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11slurm_pilot.proto\"\x07\n\x05\x45mpty\"c\n\x0fWorkerProcessID\x12\r\n\x05group\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0cslurm_job_id\x18\x03 \x01(\x03\x12\x10\n\x08hostname\x18\x04 \x01(\t\x12\x0b\n\x03pid\x18\x05 \x01(\x03\"A\n\x08TaskDefn\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12$\n\rfunction_call\x18\x02 \x01(\x0b\x32\r.FunctionCall\">\n\x0c\x46unctionCall\x12\x10\n\x08\x66unction\x18\x01 \x01(\x0c\x12\x0c\n\x04\x61rgs\x18\x02 \x01(\x0c\x12\x0e\n\x06kwargs\x18\x03 \x01(\x0c\"<\n\x0eTaskAssignment\x12\x11\n\texit_flag\x18\x01 \x01(\x08\x12\x17\n\x04task\x18\x02 \x01(\x0b\x32\t.TaskDefn\"\xcb\x01\n\nTaskResult\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x10\n\x06retval\x18\x02 \x01(\x0cH\x00\x12\x17\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x06.ErrorH\x00\x12$\n\nprocess_id\x18\x04 \x01(\x0b\x32\x10.WorkerProcessID\x12\x1c\n\x14loads_input_duration\x18\x05 \x01(\x01\x12\x14\n\x0crun_duration\x18\x06 \x01(\x01\x12\x1d\n\x15\x64umps_output_duration\x18\x07 \x01(\x01\x42\x08\n\x06result\"*\n\x05\x45rror\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\x10\n\x08\x65rror_id\x18\x02 \x01(\t2\xd5\x01\n\x0b\x43oordinator\x12\x33\n\x15RegisterWorkerProcess\x12\x10.WorkerProcessID\x1a\x06.Empty\"\x00\x12\x35\n\x17UnregisterWorkerProcess\x12\x10.WorkerProcessID\x1a\x06.Empty\"\x00\x12\x32\n\x0bGetNextTask\x12\x10.WorkerProcessID\x1a\x0f.TaskAssignment\"\x00\x12&\n\rSetTaskResult\x12\x0b.TaskResult\x1a\x06.Empty\"\x00\x62\x08\x65\x64itionsp\xe8\x07')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11slurm_pilot.proto\"\x07\n\x05\x45mpty\"c\n\x0fWorkerProcessID\x12\r\n\x05group\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\x14\n\x0cslurm_job_id\x18\x03 \x01(\x03\x12\x10\n\x08hostname\x18\x04 \x01(\t\x12\x0b\n\x03pid\x18\x05 \x01(\x03\"A\n\x08TaskDefn\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12$\n\rfunction_call\x18\x02 \x01(\x0b\x32\r.FunctionCall\">\n\x0c\x46unctionCall\x12\x10\n\x08\x66unction\x18\x01 \x01(\x0c\x12\x0c\n\x04\x61rgs\x18\x02 \x01(\x0c\x12\x0e\n\x06kwargs\x18\x03 \x01(\x0c\"N\n\x0eTaskAssignment\x12\x13\n\texit_flag\x18\x01 \x01(\x08H\x00\x12\x19\n\x04task\x18\x02 \x01(\x0b\x32\t.TaskDefnH\x00\x42\x0c\n\nassignment\"\xcb\x01\n\nTaskResult\x12\x0f\n\x07task_id\x18\x01 \x01(\t\x12\x10\n\x06retval\x18\x02 \x01(\x0cH\x00\x12\x17\n\x05\x65rror\x18\x03 \x01(\x0b\x32\x06.ErrorH\x00\x12$\n\nprocess_id\x18\x04 \x01(\x0b\x32\x10.WorkerProcessID\x12\x1c\n\x14loads_input_duration\x18\x05 \x01(\x01\x12\x14\n\x0crun_duration\x18\x06 \x01(\x01\x12\x1d\n\x15\x64umps_output_duration\x18\x07 \x01(\x01\x42\x08\n\x06result\"*\n\x05\x45rror\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\x10\n\x08\x65rror_id\x18\x02 \x01(\t2\xd5\x01\n\x0b\x43oordinator\x12\x33\n\x15RegisterWorkerProcess\x12\x10.WorkerProcessID\x1a\x06.Empty\"\x00\x12\x35\n\x17UnregisterWorkerProcess\x12\x10.WorkerProcessID\x1a\x06.Empty\"\x00\x12\x32\n\x0bGetNextTask\x12\x10.WorkerProcessID\x1a\x0f.TaskAssignment\"\x00\x12&\n\rSetTaskResult\x12\x0b.TaskResult\x1a\x06.Empty\"\x00\x62\x08\x65\x64itionsp\xe8\x07')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -40,11 +40,11 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_FUNCTIONCALL']._serialized_start=198
   _globals['_FUNCTIONCALL']._serialized_end=260
   _globals['_TASKASSIGNMENT']._serialized_start=262
-  _globals['_TASKASSIGNMENT']._serialized_end=322
-  _globals['_TASKRESULT']._serialized_start=325
-  _globals['_TASKRESULT']._serialized_end=528
-  _globals['_ERROR']._serialized_start=530
-  _globals['_ERROR']._serialized_end=572
-  _globals['_COORDINATOR']._serialized_start=575
-  _globals['_COORDINATOR']._serialized_end=788
+  _globals['_TASKASSIGNMENT']._serialized_end=340
+  _globals['_TASKRESULT']._serialized_start=343
+  _globals['_TASKRESULT']._serialized_end=546
+  _globals['_ERROR']._serialized_start=548
+  _globals['_ERROR']._serialized_end=590
+  _globals['_COORDINATOR']._serialized_start=593
+  _globals['_COORDINATOR']._serialized_end=806
 # @@protoc_insertion_point(module_scope)

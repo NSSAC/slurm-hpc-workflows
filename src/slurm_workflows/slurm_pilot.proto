@@ -30,8 +30,10 @@ message FunctionCall {
 }
 
 message TaskAssignment {
-  bool exit_flag = 1;
-  TaskDefn task = 2;
+  oneof assignment {
+    bool exit_flag = 1;
+    TaskDefn task = 2;
+  }
 }
 
 message TaskResult {

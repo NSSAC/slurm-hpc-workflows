@@ -93,12 +93,17 @@ class PilotProcess:
 
     def GetNextTask(self) -> TaskDefn | None:
         assignment: TaskAssignment = self._stub.GetNextTask(self._process_id)
-        if assignment.exit_flag:
-            self._exit_flag = True
-            return None
-        elif assignment.HasField("task"):
-            return assignment.task
-        return None
+        match assignment.WhichOneof("assignment"):
+            case "exit_flag":
+                assert assignment.exit_flag
+                self._exit_flag = True
+                return None
+            case "task":
+                return assignment.task
+            case None:
+                return None
+            case _ as unexpected:
+                raise RuntimeError(f"Unexpected: {unexpected!r}")
 
     def SetTaskResult(self, result: TaskResult) -> None:
         self._stub.SetTaskResult(result)

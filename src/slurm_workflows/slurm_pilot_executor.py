@@ -589,9 +589,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 assert process.running_task is None
 
                 if worker.exit_flag:
-                    return TaskAssignment(
-                        exit_flag=worker.exit_flag,
-                    )
+                    return TaskAssignment(exit_flag=True)
                 else:
                     task = group.task_queue.pop()
                     self.metrics.queue_access_duration.push(
@@ -600,14 +598,9 @@ class SlurmPilotExecutor(CoordinatorServicer):
 
                     if task is not None:
                         process.running_task = task
-                        return TaskAssignment(
-                            exit_flag=worker.exit_flag,
-                            task=task.defn,
-                        )
+                        return TaskAssignment(task=task.defn)
                     else:
-                        return TaskAssignment(
-                            exit_flag=worker.exit_flag,
-                        )
+                        return TaskAssignment()
         except Exception as e:
             eid = gen_error_id()
             self._logger.exception("Unexpected exception: %s: %s", eid, e)
@@ -626,18 +619,19 @@ class SlurmPilotExecutor(CoordinatorServicer):
                 process = worker.processes[process_key]
                 assert process.running_task is not None
 
-                if request.HasField("retval"):
-                    process.running_task.fut.set_result(
-                        cloudpickle.loads(request.retval)
-                    )
-                else:
-                    assert request.HasField("error")
-
-                    err = RuntimeError(
-                        "Error running task: %s: %s"
-                        % (request.error.message, request.error.error_id)
-                    )
-                    process.running_task.fut.set_exception(err)
+                match request.WhichOneof("result"):
+                    case "retval":
+                        process.running_task.fut.set_result(
+                            cloudpickle.loads(request.retval)
+                        )
+                    case "error":
+                        err = RuntimeError(
+                            "Error running task: %s: %s"
+                            % (request.error.message, request.error.error_id)
+                        )
+                        process.running_task.fut.set_exception(err)
+                    case _ as unexpected:
+                        raise RuntimeError(f"Unexpected: {unexpected!r}")
 
                 self.metrics.task_metrics.append(
                     TaskMetrics(
