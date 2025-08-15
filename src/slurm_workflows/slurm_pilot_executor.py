@@ -24,7 +24,7 @@ from more_itertools import chunked
 from typeguard import typechecked
 from runstats import Statistics
 
-from .slurm_job_manager import (
+from .slurm_utils import (
     get_running_jobids,
     cancel_jobs,
     submit_sbatch_job,

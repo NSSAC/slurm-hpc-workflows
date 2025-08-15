@@ -9,7 +9,7 @@ import platformdirs
 
 from .utils import find_jupyter, find_setup_script
 from .templates import render_template
-from .slurm_job_manager import submit_sbatch_job
+from .slurm_utils import submit_sbatch_job
 
 
 @click.command()

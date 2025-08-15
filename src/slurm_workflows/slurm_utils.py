@@ -142,7 +142,7 @@ def submit_sbatch_job(
     # Create the sbatch script
     script_path = work_dir / f"{name}.sbatch"
     script_text = render_template(
-        "slurm_job_manager:script_template",
+        "slurm_utils:script_template",
         name=name,
         sbatch_args=sbatch_args,
         script=script,
