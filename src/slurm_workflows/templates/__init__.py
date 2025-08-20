@@ -1,8 +1,7 @@
 """Jinja 2 Template Utilities."""
 
-import json
 from pathlib import Path
-from typing import cast
+from typing import cast, overload, Literal
 from dataclasses import dataclass
 import importlib.resources
 
@@ -10,7 +9,7 @@ import json5
 import jinja2
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class TemplateText:
     name: str
     source: str
@@ -93,9 +92,49 @@ _ENVIRONMENT = jinja2.Environment(
     undefined=jinja2.StrictUndefined,
     loader=jinja2.FunctionLoader(load_template),
 )
-_ENVIRONMENT.filters["json"] = json.dumps
 
 
-def render_template(template: str, *args, **kwargs) -> str:
+@overload
+def render_template(
+    template: Literal["run_jupyter:script_template"],
+    *,
+    setup_script: str | Path,
+    jupyter_executable: str | Path,
+) -> str: ...
+
+
+@overload
+def render_template(
+    template: Literal["slurm_utils:script_template"],
+    *,
+    name: str,
+    sbatch_args: list[str],
+    output_file: str | Path,
+    script: str,
+) -> str: ...
+
+
+@overload
+def render_template(
+    template: Literal["slurm_pilot:worker_sbatch_script"],
+    *,
+    is_batch_worker: bool,
+    worker_script_path: str | Path,
+) -> str: ...
+
+
+@overload
+def render_template(
+    template: Literal["slurm_pilot:worker_script"],
+    *,
+    setup_script: str | Path,
+    group: str,
+    name: str,
+    server_address: str,
+    work_dir: str | Path,
+) -> str: ...
+
+
+def render_template(template, **kwargs) -> str:
     tpl = _ENVIRONMENT.get_template(template)
-    return tpl.render(*args, **kwargs)
+    return tpl.render(**kwargs)
