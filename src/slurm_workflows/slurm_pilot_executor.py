@@ -15,6 +15,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from typing import Callable, Iterable, Any
+from functools import total_ordering
 
 import tqdm
 import grpc
@@ -67,15 +68,16 @@ def wait_with_progress(
         pass
 
 
-@dataclass(order=True)
+@total_ordering
+@dataclass(eq=False, kw_only=True)
 class TaskMeta:
-    defn: TaskDefn = field(compare=False)
-    fut: Future = field(compare=False)
-    priority: float = field(compare=True)
-    groups: list[str] = field(compare=False)
-    is_assigned: bool = field(compare=False, default=False)
-    submit_time: float = field(compare=False, default_factory=time.perf_counter)
-    wait_duration: float = field(compare=False, default=float("inf"))
+    defn: TaskDefn
+    fut: Future
+    priority: float
+    groups: list[str]
+    is_assigned: bool = False
+    submit_time: float = field(default_factory=time.perf_counter)
+    wait_duration: float = float("inf")
 
     @property
     def id(self) -> str:
@@ -83,6 +85,16 @@ class TaskMeta:
 
     def update_wait_duration(self):
         self.wait_duration = time.perf_counter() - self.submit_time
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, TaskMeta):
+            return self.priority == other.priority
+        return NotImplemented
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, TaskMeta):
+            return self.priority < other.priority
+        return NotImplemented
 
 
 @dataclass
