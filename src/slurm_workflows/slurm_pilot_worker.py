@@ -159,21 +159,32 @@ class PilotProcess:
         return result
 
     def main(self):
+        self._logger.info("Registering worker process.")
         self.RegisterWorkerProcess()
-        try:
-            while True:
-                task = self.GetNextTask()
-                if task is not None:
-                    result = self.do_run_task(task)
-                    self.SetTaskResult(result)
+        while True:
+            task = self.GetNextTask()
+            if task is not None:
+                result = self.do_run_task(task)
+                self.SetTaskResult(result)
 
-                if self._exit_flag:
-                    return
-                else:
-                    time.sleep(NEXT_TASK_RETRY_TIME_S)
-        finally:
-            self.UnregisterWorkerProcess()
-            self.close()
+            if self._exit_flag:
+                self._logger.info("Unregistering worker process.")
+                self.UnregisterWorkerProcess()
+                self.close()
+
+                # Once we receive the exit flag we no longer receive any tasks.
+                # However, other processes for this job
+                # may be still executing tasks.
+                # If this process exits, slurm will kill the other processes too.
+                # So we enter into a infinite loop.
+                # The coordinator is responsible for killing this job
+                # when none of the processes belonging to this job
+                # are processing any tasks.
+                while True:
+                    time.sleep(60.0)
+
+            else:
+                time.sleep(NEXT_TASK_RETRY_TIME_S)
 
 
 @click.command()
