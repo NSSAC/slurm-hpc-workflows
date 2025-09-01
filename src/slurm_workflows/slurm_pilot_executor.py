@@ -443,11 +443,11 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self,
         task_id: str,
         groups: list[str],
-        priority: float,
         fn: Callable,
         *args,
         **kwargs,
     ) -> Future:
+        priority = time.perf_counter()
         defn = TaskDefn(
             task_id=task_id,
             function_call=FunctionCall(
@@ -471,9 +471,8 @@ class SlurmPilotExecutor(CoordinatorServicer):
             groups = [group]
         else:
             groups = group
-        priority = time.perf_counter()
 
-        return self._submit(task_id, groups, priority, fn, *args, **kwargs)
+        return self._submit(task_id, groups, fn, *args, **kwargs)
 
     @typechecked
     def map(
@@ -490,15 +489,12 @@ class SlurmPilotExecutor(CoordinatorServicer):
             groups = [group]
         else:
             groups = group
-        priority = time.perf_counter()
 
         futs: list[Future] = []
         args_list_chunks = chunked(zip(*iterables), chunksize)
         for i, arg_list_chunk in enumerate(args_list_chunks, 1):
             tid = f"{task_id}:chunk-{i}"
-            futs.append(
-                self._submit(tid, groups, priority, _map_chunk, fn, arg_list_chunk)
-            )
+            futs.append(self._submit(tid, groups, _map_chunk, fn, arg_list_chunk))
 
         it = as_completed(futs)
         it = tqdm.tqdm(it, desc=desc, total=len(futs), unit=unit)
