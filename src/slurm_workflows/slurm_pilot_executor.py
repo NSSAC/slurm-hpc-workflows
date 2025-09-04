@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import time
 import heapq
+import queue
 import pickle
 import logging
-import random
-import string
-import queue
 import threading
 import subprocess
 from pathlib import Path
@@ -51,31 +49,20 @@ from .slurm_pilot_pb2_grpc import (
     CoordinatorServicer,
     add_CoordinatorServicer_to_server,
 )
-from .utils import data_address, find_setup_script, arbitrary_free_port
+from .utils import (
+    data_address,
+    find_setup_script,
+    arbitrary_free_port,
+    gen_error_id,
+    GRPC_SERVER_OPTIONS,
+    LOG_FORMAT,
+    LOG_LEVEL,
+)
 from .templates import render_template
 from .remote_queue import RemoteQueue
 
 INTER_SQUEUE_CALL_TIME_S: float = 5.0
 NEXT_TASK_RETRY_TIME_S: float = 1.0
-LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
-LOG_LEVEL = logging.INFO
-
-GRPC_SERVER_OPTIONS = [
-    ("grpc.keepalive_time_ms", 20000),
-    ("grpc.keepalive_timeout_ms", 10000),
-    ("grpc.http2.min_ping_interval_without_data_ms", 5000),
-    ("grpc.max_connection_idle_ms", 10000),
-    ("grpc.max_connection_age_ms", 30000),
-    ("grpc.max_connection_age_grace_ms", 5000),
-    ("grpc.http2.max_pings_without_data", 5),
-    ("grpc.keepalive_permit_without_calls", 1),
-]
-
-
-def gen_error_id() -> str:
-    return "ERROR_" + "".join(
-        random.choices(string.ascii_lowercase + string.digits, k=32)
-    )
 
 
 @typechecked

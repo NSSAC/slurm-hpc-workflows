@@ -3,7 +3,6 @@
 import os
 import sys
 import time
-import json
 import pickle
 import socket
 import logging
@@ -21,38 +20,9 @@ from .slurm_pilot_pb2 import (
     Error,
 )
 from .slurm_pilot_pb2_grpc import CoordinatorStub
-from .slurm_pilot_executor import gen_error_id
+from .utils import gen_error_id, LOG_FORMAT, LOG_LEVEL, GRPC_CLIENT_OPTIONS
 
 NEXT_TASK_RETRY_TIME_S: float = 1.0
-LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
-LOG_LEVEL = logging.INFO
-
-GRPC_CLIENT_SERVICE_CONFIG = json.dumps(
-    {
-        "methodConfig": [
-            {
-                "name": [{}],
-                "retryPolicy": {
-                    "maxAttempts": 5,
-                    "initialBackoff": "1s",
-                    "maxBackoff": "15s",
-                    "backoffMultiplier": 2,
-                    "retryableStatusCodes": ["UNAVAILABLE"],
-                },
-            }
-        ]
-    }
-)
-GRPC_CLIENT_OPTIONS = [
-    # Keep alive stuff
-    ("grpc.keepalive_time_ms", 8000),
-    ("grpc.keepalive_timeout_ms", 5000),
-    ("grpc.http2.max_pings_without_data", 5),
-    ("grpc.keepalive_permit_without_calls", 1),
-    # Retry stuff
-    ("grpc.enable_retries", 1),
-    ("grpc.service_config", GRPC_CLIENT_SERVICE_CONFIG),
-]
 
 
 class PilotProcess:

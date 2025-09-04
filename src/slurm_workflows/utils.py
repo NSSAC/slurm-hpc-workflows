@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+import json
 import signal
 import shutil
 import socket
+import random
+import string
+import logging
 import subprocess
 from pathlib import Path
 from textwrap import dedent
@@ -88,6 +92,12 @@ def cmd_str(cmd: str) -> str:
     return dedent(cmd.strip())
 
 
+def gen_error_id() -> str:
+    return "ERROR_" + "".join(
+        random.choices(string.ascii_lowercase + string.digits, k=32)
+    )
+
+
 @contextmanager
 def ignoring_sigint():
     """SIGINT is ignored inside this context manager."""
@@ -128,3 +138,46 @@ class Closeable(ABC):
 
     def __del__(self):
         self.close()
+
+
+GRPC_SERVER_OPTIONS = [
+    ("grpc.keepalive_time_ms", 20000),
+    ("grpc.keepalive_timeout_ms", 10000),
+    ("grpc.http2.min_ping_interval_without_data_ms", 5000),
+    ("grpc.max_connection_idle_ms", 10000),
+    ("grpc.max_connection_age_ms", 30000),
+    ("grpc.max_connection_age_grace_ms", 5000),
+    ("grpc.http2.max_pings_without_data", 5),
+    ("grpc.keepalive_permit_without_calls", 1),
+]
+
+GRPC_CLIENT_SERVICE_CONFIG = json.dumps(
+    {
+        "methodConfig": [
+            {
+                "name": [{}],
+                "retryPolicy": {
+                    "maxAttempts": 5,
+                    "initialBackoff": "1s",
+                    "maxBackoff": "15s",
+                    "backoffMultiplier": 2,
+                    "retryableStatusCodes": ["UNAVAILABLE"],
+                },
+            }
+        ]
+    }
+)
+GRPC_CLIENT_OPTIONS = [
+    # Keep alive stuff
+    ("grpc.keepalive_time_ms", 8000),
+    ("grpc.keepalive_timeout_ms", 5000),
+    ("grpc.http2.max_pings_without_data", 5),
+    ("grpc.keepalive_permit_without_calls", 1),
+    # Retry stuff
+    ("grpc.enable_retries", 1),
+    ("grpc.service_config", GRPC_CLIENT_SERVICE_CONFIG),
+]
+
+
+LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
+LOG_LEVEL = logging.INFO

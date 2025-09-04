@@ -9,15 +9,15 @@ import grpc
 import cloudpickle
 
 from slurm_workflows.slurm_pilot_pb2 import (
-    SHUTDOWN,
-    QueueGetResponse,
     QueueID,
+    QueueGetResponse,
     QueuePutRequest,
     QueuePutResponse,
+    SHUTDOWN,
 )
 
 from .slurm_pilot_pb2_grpc import CoordinatorStub
-from .slurm_pilot_worker import GRPC_CLIENT_OPTIONS
+from .utils import GRPC_CLIENT_OPTIONS
 
 INTER_QUEUE_REQUEST_TIME: float = 0.1
 
