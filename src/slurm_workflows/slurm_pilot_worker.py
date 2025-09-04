@@ -27,6 +27,33 @@ NEXT_TASK_RETRY_TIME_S: float = 1.0
 LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
 LOG_LEVEL = logging.INFO
 
+GRPC_CLIENT_SERVICE_CONFIG = json.dumps(
+    {
+        "methodConfig": [
+            {
+                "name": [{}],
+                "retryPolicy": {
+                    "maxAttempts": 5,
+                    "initialBackoff": "1s",
+                    "maxBackoff": "15s",
+                    "backoffMultiplier": 2,
+                    "retryableStatusCodes": ["UNAVAILABLE"],
+                },
+            }
+        ]
+    }
+)
+GRPC_CLIENT_OPTIONS = [
+    # Keep alive stuff
+    ("grpc.keepalive_time_ms", 8000),
+    ("grpc.keepalive_timeout_ms", 5000),
+    ("grpc.http2.max_pings_without_data", 5),
+    ("grpc.keepalive_permit_without_calls", 1),
+    # Retry stuff
+    ("grpc.enable_retries", 1),
+    ("grpc.service_config", GRPC_CLIENT_SERVICE_CONFIG),
+]
+
 
 class PilotProcess:
     def __init__(
@@ -52,34 +79,9 @@ class PilotProcess:
         self._exit_flag = False
         self._logger = logging.getLogger("worker_process")
 
-        client_service_config = json.dumps(
-            {
-                "methodConfig": [
-                    {
-                        "name": [{}],
-                        "retryPolicy": {
-                            "maxAttempts": 5,
-                            "initialBackoff": "1s",
-                            "maxBackoff": "15s",
-                            "backoffMultiplier": 2,
-                            "retryableStatusCodes": ["UNAVAILABLE"],
-                        },
-                    }
-                ]
-            }
+        self._channel = grpc.insecure_channel(
+            self._server_address, options=GRPC_CLIENT_OPTIONS
         )
-        options = [
-            # Keep alive stuff
-            ("grpc.keepalive_time_ms", 8000),
-            ("grpc.keepalive_timeout_ms", 5000),
-            ("grpc.http2.max_pings_without_data", 5),
-            ("grpc.keepalive_permit_without_calls", 1),
-            # Retry stuff
-            ("grpc.enable_retries", 1),
-            ("grpc.service_config", client_service_config),
-        ]
-
-        self._channel = grpc.insecure_channel(self._server_address, options=options)
         self._stub = CoordinatorStub(self._channel)
 
     def close(self):

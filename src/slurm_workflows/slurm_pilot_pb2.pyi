@@ -1,9 +1,19 @@
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
 from collections.abc import Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class QueueErrorCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    FULL: _ClassVar[QueueErrorCode]
+    EMPTY: _ClassVar[QueueErrorCode]
+    SHUTDOWN: _ClassVar[QueueErrorCode]
+FULL: QueueErrorCode
+EMPTY: QueueErrorCode
+SHUTDOWN: QueueErrorCode
 
 class Empty(_message.Message):
     __slots__ = ()
@@ -74,3 +84,31 @@ class Error(_message.Message):
     message: str
     error_id: str
     def __init__(self, message: _Optional[str] = ..., error_id: _Optional[str] = ...) -> None: ...
+
+class QueueID(_message.Message):
+    __slots__ = ("queue",)
+    QUEUE_FIELD_NUMBER: _ClassVar[int]
+    queue: str
+    def __init__(self, queue: _Optional[str] = ...) -> None: ...
+
+class QueuePutRequest(_message.Message):
+    __slots__ = ("queue", "item")
+    QUEUE_FIELD_NUMBER: _ClassVar[int]
+    ITEM_FIELD_NUMBER: _ClassVar[int]
+    queue: str
+    item: bytes
+    def __init__(self, queue: _Optional[str] = ..., item: _Optional[bytes] = ...) -> None: ...
+
+class QueuePutResponse(_message.Message):
+    __slots__ = ("error",)
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    error: QueueErrorCode
+    def __init__(self, error: _Optional[_Union[QueueErrorCode, str]] = ...) -> None: ...
+
+class QueueGetResponse(_message.Message):
+    __slots__ = ("item", "error")
+    ITEM_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    item: bytes
+    error: QueueErrorCode
+    def __init__(self, item: _Optional[bytes] = ..., error: _Optional[_Union[QueueErrorCode, str]] = ...) -> None: ...

@@ -6,6 +6,10 @@ service Coordinator {
 
   rpc GetNextTask(WorkerProcessID) returns (TaskAssignment) {}
   rpc SetTaskResult(TaskResult) returns (Empty) {}
+
+  rpc QueueTryPut(QueuePutRequest) returns (QueuePutResponse) {}
+  rpc QueueTryGet(QueueID) returns (QueueGetResponse) {}
+  rpc QueueShutdown(QueueID) returns (Empty) {}
 }
 
 message Empty {}
@@ -51,4 +55,26 @@ message TaskResult {
 message Error {
   string message = 1;
   string error_id = 2;
+}
+
+enum QueueErrorCode {
+  FULL = 0;
+  EMPTY = 1;
+  SHUTDOWN = 2;
+}
+
+message QueueID { string queue = 1; }
+
+message QueuePutRequest {
+  string queue = 1;
+  bytes item = 2;
+}
+
+message QueuePutResponse { QueueErrorCode error = 1; }
+
+message QueueGetResponse {
+  oneof result {
+    bytes item = 1;
+    QueueErrorCode error = 2;
+  }
 }

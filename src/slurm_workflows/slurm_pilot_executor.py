@@ -8,6 +8,7 @@ import pickle
 import logging
 import random
 import string
+import queue
 import threading
 import subprocess
 from pathlib import Path
@@ -33,11 +34,18 @@ from .slurm_utils import (
 )
 from .slurm_pilot_pb2 import (
     Empty,
+    QueueID,
+    QueueGetResponse,
+    QueuePutRequest,
+    QueuePutResponse,
     WorkerProcessID,
     TaskDefn,
     TaskAssignment,
     TaskResult,
     FunctionCall,
+    FULL,
+    EMPTY,
+    SHUTDOWN,
 )
 from .slurm_pilot_pb2_grpc import (
     CoordinatorServicer,
@@ -45,11 +53,23 @@ from .slurm_pilot_pb2_grpc import (
 )
 from .utils import data_address, find_setup_script, arbitrary_free_port
 from .templates import render_template
+from .remote_queue import RemoteQueue
 
 INTER_SQUEUE_CALL_TIME_S: float = 5.0
 NEXT_TASK_RETRY_TIME_S: float = 1.0
 LOG_FORMAT: str = "%(asctime)s:%(name)s:%(levelname)s:%(message)s"
 LOG_LEVEL = logging.INFO
+
+GRPC_SERVER_OPTIONS = [
+    ("grpc.keepalive_time_ms", 20000),
+    ("grpc.keepalive_timeout_ms", 10000),
+    ("grpc.http2.min_ping_interval_without_data_ms", 5000),
+    ("grpc.max_connection_idle_ms", 10000),
+    ("grpc.max_connection_age_ms", 30000),
+    ("grpc.max_connection_age_grace_ms", 5000),
+    ("grpc.http2.max_pings_without_data", 5),
+    ("grpc.keepalive_permit_without_calls", 1),
+]
 
 
 def gen_error_id() -> str:
@@ -217,6 +237,8 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._groups: dict[str, WorkerGroup] = {}
         self._exit_flag = threading.Event()
         self._queue_monitor_thread: threading.Thread | None = None
+
+        self._user_defined_queues: dict[str, queue.Queue] = {}
 
         self._server_address: str | None = None
         self._server: grpc.Server | None = None
@@ -662,6 +684,72 @@ class SlurmPilotExecutor(CoordinatorServicer):
             context.set_details("Unexpected exception: %s: %s" % (eid, e))
             raise grpc.RpcError(context)
 
+    def make_queue(self, name: str, maxsize: int = 0) -> RemoteQueue:
+        with self._lock:
+            assert name not in self._user_defined_queues, "Duplicate queue"
+            assert self._server_address is not None, "Server not running"
+            self._user_defined_queues[name] = queue.Queue(maxsize)
+
+        return RemoteQueue(self._server_address, name)
+
+    def QueueTryPut(
+        self, request: QueuePutRequest, context: grpc.ServicerContext
+    ) -> QueuePutResponse:
+        try:
+            with self._lock:
+                Q = self._user_defined_queues[request.queue]
+
+            try:
+                Q.put_nowait(request.item)
+            except queue.Full:
+                return QueuePutResponse(error=FULL)
+            except queue.ShutDown:
+                return QueuePutResponse(error=SHUTDOWN)
+
+            return QueuePutResponse()
+        except Exception as e:
+            eid = gen_error_id()
+            self._logger.exception("Unexpected exception: %s: %s", eid, e)
+            context.set_code(grpc.StatusCode.UNKNOWN)
+            context.set_details("Unexpected exception: %s: %s" % (eid, e))
+            raise grpc.RpcError(context)
+
+    def QueueTryGet(
+        self, request: QueueID, context: grpc.ServicerContext
+    ) -> QueueGetResponse:
+        try:
+            with self._lock:
+                Q = self._user_defined_queues[request.queue]
+
+            try:
+                item = Q.get_nowait()
+            except queue.Empty:
+                return QueueGetResponse(error=EMPTY)
+            except queue.ShutDown:
+                return QueueGetResponse(error=SHUTDOWN)
+
+            return QueueGetResponse(item=item)
+        except Exception as e:
+            eid = gen_error_id()
+            self._logger.exception("Unexpected exception: %s: %s", eid, e)
+            context.set_code(grpc.StatusCode.UNKNOWN)
+            context.set_details("Unexpected exception: %s: %s" % (eid, e))
+            raise grpc.RpcError(context)
+
+    def QueueShutdown(self, request: QueueID, context: grpc.ServicerContext) -> Empty:
+        try:
+            with self._lock:
+                Q = self._user_defined_queues[request.queue]
+
+            Q.shutdown()
+            return Empty()
+        except Exception as e:
+            eid = gen_error_id()
+            self._logger.exception("Unexpected exception: %s: %s", eid, e)
+            context.set_code(grpc.StatusCode.UNKNOWN)
+            context.set_details("Unexpected exception: %s: %s" % (eid, e))
+            raise grpc.RpcError(context)
+
     def start(self):
         assert self._queue_monitor_thread is None
         assert self._server is None
@@ -669,21 +757,12 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self._queue_monitor_thread = threading.Thread(target=self._queue_monitor_main)
         self._queue_monitor_thread.start()
 
-        options = [
-            ("grpc.keepalive_time_ms", 20000),
-            ("grpc.keepalive_timeout_ms", 10000),
-            ("grpc.http2.min_ping_interval_without_data_ms", 5000),
-            ("grpc.max_connection_idle_ms", 10000),
-            ("grpc.max_connection_age_ms", 30000),
-            ("grpc.max_connection_age_grace_ms", 5000),
-            ("grpc.http2.max_pings_without_data", 5),
-            ("grpc.keepalive_permit_without_calls", 1),
-        ]
-
         host = data_address(None)
         port = arbitrary_free_port(host)
         self._server_address = f"{host}:{port}"
-        self._server = grpc.server(ThreadPoolExecutor(max_workers=1), options=options)
+        self._server = grpc.server(
+            ThreadPoolExecutor(max_workers=1), options=GRPC_SERVER_OPTIONS
+        )
         add_CoordinatorServicer_to_server(self, self._server)
         self._server.add_insecure_port(self._server_address)
         self._server.start()

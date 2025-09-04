@@ -55,6 +55,21 @@ class CoordinatorStub(object):
                 request_serializer=slurm__pilot__pb2.TaskResult.SerializeToString,
                 response_deserializer=slurm__pilot__pb2.Empty.FromString,
                 _registered_method=True)
+        self.QueueTryPut = channel.unary_unary(
+                '/Coordinator/QueueTryPut',
+                request_serializer=slurm__pilot__pb2.QueuePutRequest.SerializeToString,
+                response_deserializer=slurm__pilot__pb2.QueuePutResponse.FromString,
+                _registered_method=True)
+        self.QueueTryGet = channel.unary_unary(
+                '/Coordinator/QueueTryGet',
+                request_serializer=slurm__pilot__pb2.QueueID.SerializeToString,
+                response_deserializer=slurm__pilot__pb2.QueueGetResponse.FromString,
+                _registered_method=True)
+        self.QueueShutdown = channel.unary_unary(
+                '/Coordinator/QueueShutdown',
+                request_serializer=slurm__pilot__pb2.QueueID.SerializeToString,
+                response_deserializer=slurm__pilot__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class CoordinatorServicer(object):
@@ -84,6 +99,24 @@ class CoordinatorServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def QueueTryPut(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueueTryGet(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueueShutdown(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CoordinatorServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -105,6 +138,21 @@ def add_CoordinatorServicer_to_server(servicer, server):
             'SetTaskResult': grpc.unary_unary_rpc_method_handler(
                     servicer.SetTaskResult,
                     request_deserializer=slurm__pilot__pb2.TaskResult.FromString,
+                    response_serializer=slurm__pilot__pb2.Empty.SerializeToString,
+            ),
+            'QueueTryPut': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueueTryPut,
+                    request_deserializer=slurm__pilot__pb2.QueuePutRequest.FromString,
+                    response_serializer=slurm__pilot__pb2.QueuePutResponse.SerializeToString,
+            ),
+            'QueueTryGet': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueueTryGet,
+                    request_deserializer=slurm__pilot__pb2.QueueID.FromString,
+                    response_serializer=slurm__pilot__pb2.QueueGetResponse.SerializeToString,
+            ),
+            'QueueShutdown': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueueShutdown,
+                    request_deserializer=slurm__pilot__pb2.QueueID.FromString,
                     response_serializer=slurm__pilot__pb2.Empty.SerializeToString,
             ),
     }
@@ -215,6 +263,87 @@ class Coordinator(object):
             target,
             '/Coordinator/SetTaskResult',
             slurm__pilot__pb2.TaskResult.SerializeToString,
+            slurm__pilot__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueueTryPut(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/Coordinator/QueueTryPut',
+            slurm__pilot__pb2.QueuePutRequest.SerializeToString,
+            slurm__pilot__pb2.QueuePutResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueueTryGet(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/Coordinator/QueueTryGet',
+            slurm__pilot__pb2.QueueID.SerializeToString,
+            slurm__pilot__pb2.QueueGetResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueueShutdown(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/Coordinator/QueueShutdown',
+            slurm__pilot__pb2.QueueID.SerializeToString,
             slurm__pilot__pb2.Empty.FromString,
             options,
             channel_credentials,
