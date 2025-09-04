@@ -5,8 +5,8 @@ import re
 import subprocess
 from pathlib import Path
 from dataclasses import dataclass
+from functools import cache
 
-from .utils import find_sbatch
 from .templates import render_template
 
 COMMAND_TIMEOUT = 120
@@ -15,14 +15,13 @@ SBATCH_OUTPUT_REGEX = re.compile(r"Submitted batch job (?P<id>\S*)")
 
 SLURM_USER = os.environ["USER"]
 
-CLEAN_ENVIRON: dict
-
-SBATCH_EXE: str
-SQUEUE_EXE: str
-SCANCEL_EXE: str
+SBATCH_EXE = "sbatch"
+SQUEUE_EXE = "squeue"
+SCANCEL_EXE = "scancel"
 
 
-def _get_clean_environ() -> dict[str, str]:
+@cache
+def get_clean_environ() -> dict[str, str]:
     """Create environment dict without SLURM set variables.
 
     This is an issue when submitting Slurm jobs from within Slurm jobs.
@@ -38,43 +37,8 @@ def _get_clean_environ() -> dict[str, str]:
             continue
 
         sanitized_env[k] = v
+
     return sanitized_env
-
-
-def _init_globals():
-    global CLEAN_ENVIRON
-    global SBATCH_EXE, SQUEUE_EXE, SCANCEL_EXE
-
-    CLEAN_ENVIRON = _get_clean_environ()
-
-    sbatch_exe = find_sbatch(None)
-    SBATCH_EXE = str(sbatch_exe)
-    SQUEUE_EXE = str(sbatch_exe.parent / "squeue")
-    SCANCEL_EXE = str(sbatch_exe.parent / "scancel")
-
-
-_init_globals()
-
-
-def set_sbatch_exe_path(sbatch_exe: Path | str):
-    global SBATCH_EXE, SQUEUE_EXE, SCANCEL_EXE
-
-    sbatch_exe = find_sbatch(sbatch_exe)
-    SBATCH_EXE = str(sbatch_exe)
-    SQUEUE_EXE = str(sbatch_exe.parent / "squeue")
-    SCANCEL_EXE = str(sbatch_exe.parent / "scancel")
-
-
-def set_slurm_user(slurm_user: str):
-    global SLURM_USER
-
-    SLURM_USER = slurm_user
-
-
-def set_command_timeout(timeout: int):
-    global COMMAND_TIMEOUT
-
-    COMMAND_TIMEOUT = timeout
 
 
 def get_running_jobids() -> set[int]:
@@ -158,7 +122,7 @@ def submit_sbatch_job(
         capture_output=True,
         text=True,
         timeout=COMMAND_TIMEOUT,
-        env=CLEAN_ENVIRON,
+        env=get_clean_environ(),
     )
 
     # Extract job id
