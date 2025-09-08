@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 import time
 import pickle
 import socket
@@ -169,7 +170,15 @@ class PilotProcess:
     required=True,
     help="Work directory",
 )
-def slurm_pilot_worker(group: str, name: str, server_address: str, work_dir: Path):
+@click.option(
+    "--python-paths-json",
+    type=str,
+    required=True,
+    help="JSON encoded Python paths",
+)
+def slurm_pilot_worker(
+    group: str, name: str, server_address: str, work_dir: Path, python_paths_json: str
+):
     """Start a slurm pilot worker."""
     slurm_job_id = int(os.environ.get("SLURM_JOB_ID", -1))
     hostname = socket.gethostname()
@@ -188,6 +197,10 @@ def slurm_pilot_worker(group: str, name: str, server_address: str, work_dir: Pat
 
         os.environ["PILOT_WORKER_NAME"] = name
         os.environ["PILOT_WORKER_GROUP"] = group
+
+        python_paths: list[str] = json.loads(python_paths_json)
+        for path in python_paths:
+            sys.path.insert(0, path)
 
         worker = PilotProcess(
             group=group,

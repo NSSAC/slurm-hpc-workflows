@@ -132,6 +132,7 @@ def render_template(
     name: str,
     server_address: str,
     work_dir: str | Path,
+    python_paths_json: str,
 ) -> str: ...
 
 

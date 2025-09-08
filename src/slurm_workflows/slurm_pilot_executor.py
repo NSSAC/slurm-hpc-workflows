@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 import heapq
 import queue
 import pickle
@@ -203,6 +204,8 @@ class SlurmPilotExecutor(CoordinatorServicer):
         self,
         work_dir: Path | str | None = None,
         setup_script: Path | str | None = None,
+        python_paths: list[str | Path] | None = None,
+        add_cwd_to_python_path: bool = True,
     ):
         self.setup_script = find_setup_script(setup_script)
 
@@ -211,6 +214,13 @@ class SlurmPilotExecutor(CoordinatorServicer):
             work_dir = platformdirs.user_cache_path(appname=f"slurm-pilot") / now
         self.work_dir = Path(work_dir)
         self.work_dir.mkdir(parents=True, exist_ok=True)
+
+        self.python_paths: list[str] = []
+        if python_paths is not None:
+            for path in python_paths:
+                self.python_paths.append(str(path))
+        if add_cwd_to_python_path:
+            self.python_paths.append(str(Path.cwd()))
 
         self._logger = logging.getLogger("pilot_coordinator")
         self._logger.setLevel(LOG_LEVEL)
@@ -368,6 +378,7 @@ class SlurmPilotExecutor(CoordinatorServicer):
             name=name,
             server_address=self._server_address,
             work_dir=str(self.work_dir),
+            python_paths_json=json.dumps(self.python_paths),
             setup_script=str(self.setup_script),
         )
         worker_script_path = self.work_dir / f"{name}.sh"
